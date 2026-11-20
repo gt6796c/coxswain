@@ -3,6 +3,12 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-11-20 — Adopting the user's worktrees
+
+- With `COXSWAIN_ADOPT_WORKTREES` set, a local repository's branch checked out in one of the user's own worktrees is reviewed there instead of refused: coxswain's worktree path becomes a symlink to it. Never the repository's own checkout. See ADR 0046.
+- The link is checked on every open: a removed worktree or one switched to another branch drops it, and the workspace gets a worktree of coxswain's. Auto-update is turned off on every open of an adopted one, so coxswain never resets the user's work. Language servers get the real path.
+- A test covers off-by-default, adoption, the user switching branches there (fails if an existing link is trusted), and the main checkout staying refused. No schema change.
+
 ## 2026-11-07 — Release v1.10.3
 
 - Release includes provider-neutral review-only instructions, optional Amp implementation connections, remote-thread handoffs with submission acknowledgment, and immediate/one-shot remote updates from the top Settings menu.
