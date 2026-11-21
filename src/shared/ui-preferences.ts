@@ -6,7 +6,8 @@ export type GuideOptions = {
   hiddenAuthors: string[];
   shownAuthors: string[];
 };
-export type GuideDescriptionPosition = "beside" | "above";
+// on-demand: the description shows in a panel over full-width file cards, on ⌘I (DescriptionPeek.tsx).
+export type GuideDescriptionPosition = "beside" | "above" | "on-demand";
 export type ViewSettings = {
   diffStyle: "unified" | "split";
   showReviewed: boolean;

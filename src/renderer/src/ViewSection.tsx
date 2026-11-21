@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { cn, muted } from "./components/styles";
 import { Prose } from "./components/text";
 import { count } from "./format";
@@ -24,6 +25,7 @@ export function ViewSectionHeader(props: {
   reviewed: number;
   writing: boolean;
   onReviewedChange: (on: boolean) => void;
+  children?: ReactNode; // more controls, after Reviewed
 }) {
   const partial = props.reviewed > 0 && props.reviewed < props.files;
   return (
@@ -63,6 +65,7 @@ export function ViewSectionHeader(props: {
               </label>
             </>
           )}
+          {props.children}
         </div>
       )}
     </div>
