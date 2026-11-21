@@ -155,7 +155,12 @@ test("a terminal session gets its branch's tools, reads the user's comments and 
     },
   );
   assert.equal((await session.call("read_review")).text, "No open thread waits on you.");
+  // With all, a thread where the agent spoke last (as an earlier review's findings do) is listed too.
+  const everything = await session.call("read_review", { all: true });
+  assert.match(everything.text, new RegExp(`^1 open thread\\(s\\)[^]*Thread ${note.id}, on`));
+  assert.match(everything.text, /You: It reads better\.$/);
   await session.call("resolve_thread", { thread_id: note.id });
+  assert.equal((await session.call("read_review", { all: true })).text, "No open thread.");
   const root = await db
     .selectFrom("entries")
     .select("resolved_at")

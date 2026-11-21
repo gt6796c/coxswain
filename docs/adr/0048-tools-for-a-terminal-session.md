@@ -25,7 +25,9 @@ coxswain's tools are served only to pane sessions, on a port that changes every 
    connection. All traffic goes over the socket, so the same bridge could serve a session on another machine through a
    forwarded socket.
 4. **The tools** are the pane's view tools less `publish_guide`, plus `read_review` (open anchored threads whose last
-   entry isn't an agent's: the user's comments and their replies to findings, with thread ids and code),
+   entry isn't an agent's: the user's comments and their replies to findings, with thread ids and code; with `all`, the
+   agent's own open threads too, so a second review can skip findings already there and resolve those that no longer
+   hold),
    `reply_to_thread` (an answer entry), `resolve_thread` (not a thread on GitHub: the user resolves those there) and
    `finish_guide`. A pane turn ending marks its views written (glossary "Being written"); a terminal session has no turn
    coxswain sees, so it calls `finish_guide`.

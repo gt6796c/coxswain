@@ -71,9 +71,18 @@ export function terminalTools(db: Db, workspaceId: number): McpTool[] {
       name: "read_review",
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
       description:
-        "The user's open review threads in coxswain that wait on you: their comments on the diff, on the Guide and on your findings, each with its thread id, where it points and the code there. Call it when the user says they commented, or asks you to address their comments.",
-      inputSchema: { type: "object", properties: {} },
-      call: async () => reviewText(await liveEntries(db, workspaceId)),
+        "The user's open review threads in coxswain that wait on you: their comments on the diff, on the Guide and on your findings, each with its thread id, where it points and the code there. Call it when the user says they commented, or asks you to address their comments. With all, also the open threads where an agent spoke last, such as findings of an earlier review: read them before adding findings, so you don't add one that's already there.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          all: {
+            type: "boolean",
+            description: "Also the open threads where an agent spoke last (default false)",
+          },
+        },
+      },
+      call: async (args: { all?: boolean }) =>
+        reviewText(await liveEntries(db, workspaceId), args?.all === true),
     },
     {
       name: "reply_to_thread",
@@ -129,13 +138,14 @@ export function terminalTools(db: Db, workspaceId: number): McpTool[] {
   ];
 }
 
-// Open anchored threads whose last entry isn't the agent's, each with its id, as read_review gives them.
-export function reviewText(entries: ReviewEntry[]): string {
+// Open anchored threads whose last entry isn't the agent's, each with its id, as read_review gives them. With all, the
+// agent's own too (its findings nobody answered), so a new review can be checked against the one already there.
+export function reviewText(entries: ReviewEntry[], all = false): string {
   const threads = entries
     .filter((e) => anchored(e) && !e.parentId && !e.resolvedAt)
     .map((root) => [root, ...entries.filter((e) => e.parentId === root.id)])
-    .filter((t) => !byAgent(t[t.length - 1]));
-  if (!threads.length) return "No open thread waits on you.";
+    .filter((t) => all || !byAgent(t[t.length - 1]));
+  if (!threads.length) return all ? "No open thread." : "No open thread waits on you.";
   const parts = threads.map(([root, ...replies]) => {
     const changed =
       root.state !== "outdated"
@@ -146,7 +156,10 @@ export function reviewText(entries: ReviewEntry[]): string {
     const lines = [root, ...replies].map((e) => `${who(e)}: ${e.body}`);
     return `Thread ${root.id}, on ${describe(root)}${changed}\n${lines.join("\n")}`;
   });
-  return `${threads.length} open thread(s) wait on you, oldest first. "Me" is the user, "You" an agent of this workspace (you, or coxswain's own), "@name" a reviewer on GitHub. Answer each with reply_to_thread, and resolve_thread the settled ones.\n\n${parts.join("\n\n")}`;
+  const legend = `"Me" is the user, "You" an agent of this workspace (you, or coxswain's own), "@name" a reviewer on GitHub.`;
+  return all
+    ? `${threads.length} open thread(s), oldest first, those where "You" spoke last included. ${legend} Resolve with resolve_thread a finding of yours that no longer holds, replying first with why.\n\n${parts.join("\n\n")}`
+    : `${threads.length} open thread(s) wait on you, oldest first. ${legend} Answer each with reply_to_thread, and resolve_thread the settled ones.\n\n${parts.join("\n\n")}`;
 }
 
 // ponytail: the MCP answering and argument check below copy agents.ts's toolServer and mismatch, so this file touches
