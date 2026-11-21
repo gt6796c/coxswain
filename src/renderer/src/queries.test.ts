@@ -108,6 +108,7 @@ test("Guide switching prepares pinned content without waiting for GitHub and reu
       workspaceId: id,
       title: "Guide",
       worktree: true,
+      scope: "all",
       createdAt: "",
       writing: false,
       base: "base",

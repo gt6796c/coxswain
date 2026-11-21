@@ -1672,6 +1672,7 @@ export function App() {
                   >
                     <PaneBar
                       tab={view}
+                      guideScope={views?.[0]?.scope}
                       files={fileCountLabel(
                         view === "diffs" ? diffPr.changed : pr.changed,
                         view === "diffs" ? reviewedQuery.data : liveReviewedQuery.data,
@@ -1942,7 +1943,12 @@ export function App() {
                             )}
                             {view === "sections" &&
                               !showFile &&
-                              isGuideStale(canvasView, pr.commits?.mergeBase, pr.snapshot) && (
+                              isGuideStale(canvasView, {
+                                mergeBase: pr.commits?.mergeBase,
+                                pushed: pr.commits?.head,
+                                committed,
+                                snapshot: pr.snapshot,
+                              }) && (
                                 <GuideStaleNotice
                                   key={currentWorkspace.id}
                                   workspaceId={currentWorkspace.id}

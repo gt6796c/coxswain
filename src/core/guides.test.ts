@@ -367,6 +367,92 @@ test("automatic Guide updates wait while an agent turn writes the Guide", async 
   assert.equal(turns, 1);
 });
 
+test("a Guide of the uncommitted changes keeps its scope through updates", async (t) => {
+  const repo = join(temp, "scope-repo");
+  mkdirSync(repo);
+  git(repo, "init", "-b", "main");
+  writeFileSync(join(repo, "a.ts"), "export const value = 1;\n");
+  git(repo, "add", ".");
+  git(repo, "commit", "-m", "base");
+  const db = openDatabase(join(temp, "scope-guides.db"));
+  t.after(async () => {
+    setGuideSessionDriver();
+    await db.destroy();
+  });
+  await db
+    .insertInto("projects")
+    .values({ id: 1, github: null, name: "scope-repo", path: repo, last_opened_at: "" })
+    .execute();
+  await db
+    .insertInto("workspaces")
+    .values({
+      id: 1,
+      project_id: 1,
+      pr_number: null,
+      branch: "feature",
+      base_branch: "main",
+      last_opened_at: "",
+    })
+    .execute();
+  assert.equal((await openWorktree(db, 1)).status, "ok");
+  const worktree = await openedWorktree(db, 1);
+  // A commit on the branch, then an uncommitted change on top: the Guide covers only the latter.
+  writeFileSync(join(worktree, "b.ts"), "export const other = 1;\n");
+  git(worktree, "add", ".");
+  git(worktree, "commit", "-m", "committed");
+  const head = git(worktree, "rev-parse", "HEAD").trim();
+  writeFileSync(join(worktree, "a.ts"), "export const value = 2;\n");
+  const prompts: string[] = [];
+  setGuideSessionDriver({
+    create: async () => ({ agentSessionId: "guide-session", agent: "claude" }),
+    run: async (database, _session, prompt, _settings, onStart) => {
+      onStart();
+      prompts.push(prompt);
+      await viewTools(database, 1)
+        .find((tool) => tool.name === "publish_guide")!
+        .call({
+          request_id: /request_id=([^,]+)/.exec(prompt)![1],
+          sections: [{ title: "Behavior", body: "Changes the value.", files: ["a.ts"] }],
+        } as never);
+      return { status: "ok" };
+    },
+  });
+  const call = (name: string, args: object) =>
+    viewTools(db, 1)
+      .find((tool) => tool.name === name)!
+      .call(args as never);
+
+  await assert.rejects(call("start_guide", { scope: "uncommitted", base: "HEAD" }), /scope, or/);
+  await assert.rejects(call("start_guide", { scope: "pinned" }), /No scope pinned/);
+  // base HEAD → the worktree lines up with the uncommitted scope, so the Guide keeps it.
+  assert.match(String(await call("start_guide", { base: "HEAD" })), /the uncommitted changes/);
+  const [started] = await listViews(db, 1);
+  assert.equal(started.scope, "uncommitted");
+  assert.equal(started.base, head);
+  await call("write_section", { markdown: "## Review\nOne finding.\n```diff path=a.ts\n```" });
+  turnEnded(1);
+  await ensureGuide(db, 1);
+  assert.equal(guideWorkPending(1), false);
+  assert.equal(prompts.length, 0, "a current uncommitted-only Guide isn't replaced");
+
+  // The worktree moves on: the update covers the uncommitted changes again, not the whole branch (b.ts).
+  writeFileSync(join(worktree, "a.ts"), "export const value = 3;\n");
+  await ensureGuide(db, 1);
+  await idle(db);
+  assert.equal(prompts.length, 1);
+  assert.match(prompts[0], /covers the uncommitted changes/);
+  assert.doesNotMatch(prompts[0], /b\.ts/);
+  const [updated] = await listViews(db, 1);
+  assert.equal(updated.scope, "uncommitted");
+  assert.equal(updated.base, head);
+  assert.equal(updated.sections.length, 1);
+
+  // Asking for a scope by name does the same; all of the changes goes back to the merge base.
+  await call("start_guide", { scope: "all" });
+  assert.equal((await listViews(db, 1))[0].scope, "all");
+  turnEnded(1);
+});
+
 test("Guide settings default to Claude Opus, remember each agent and persist separately", async () => {
   const path = join(temp, "guide-settings.db");
   let db = openDatabase(path);

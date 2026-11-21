@@ -3,11 +3,13 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
-## 2026-11-21 — Automatic Guide updates wait for a Guide being written
+## 2026-11-21 — Automatic Guide updates wait for a Guide being written; the Guide keeps its scope
 
 - A requested review (or any agent pane turn writing the Guide) starts with `start_guide`, which empties the Guide until its sections come. An automatic update, set off meanwhile by a window focus or a settings change, saw an empty Guide as stale and replaced the review with a plain reading guide, and held the update lock so the review's own writes were refused. Automatic updates now skip a Guide that is being written; the next change or focus after the turn checks again. Update Guide still goes ahead.
-- Still open: a Guide pinned to another range than merge base → worktree (a review of only the uncommitted changes) is replaced by the next automatic update after its turn, even with no change.
-- A test covers the race and fails without the fix. All 129 tests, typecheck, lint, formatting and production build pass.
+- The Guide keeps a scope ([ADR 0023](adr/0023-guides-made-by-the-agent-pane.md)): all of the changes, what's on GitHub, the commits not pushed, the uncommitted changes, or a pinned range. `start_guide` takes `scope`, and a base and head that line up with one (base `HEAD` → the worktree) keep it. A Guide of only the uncommitted changes used to show _out of date_ at once (its base isn't the merge base) and was widened to the whole branch by the next update; now updates, Update Guide and the stale warning follow its scope. The Guide tab's tooltip names a scope other than all.
+- `ponytail:` a scope left empty (all the uncommitted changes committed) keeps its old Guide, still out of date, and Update Guide does nothing; widening it to all of the changes is the upgrade.
+- Still open: once the worktree moves on, an automatic update rewrites a requested review's sections with the default Guide prompt (over the same scope now).
+- Tests cover the race and scoped Guides (start_guide inferring the uncommitted scope, an update keeping it, the stale check per scope).
 
 ## 2026-11-07 — Release v1.10.3
 

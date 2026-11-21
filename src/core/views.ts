@@ -4,7 +4,15 @@ import type { McpTool } from "./agents";
 import type { Db } from "./db";
 import { emit } from "./events.ts";
 import {
+  type GuideScope,
+  isGuideScope,
+  rangeOf,
+  scopeOf,
+  type ScopeEnds,
+} from "../shared/guide-scope.ts";
+import {
   type ChangedFile,
+  headCommit,
   listChangedFiles,
   listFilesAt,
   openedBefore,
@@ -28,13 +36,15 @@ export type ViewPart =
   | { kind: "diff" | "file"; path: string; muted: boolean };
 export type ViewSection = { title: string; parts: ViewPart[] };
 // worktree: its head was a snapshot of the worktree, so it's stale once the worktree moves on; a view of a commit, a
-// turn or what's on GitHub never is. writing: being written (glossary), a turn that changed it still runs.
+// turn or what's on GitHub never is. scope: the Guide's scope (glossary), which updates and the stale check follow.
+// writing: being written (glossary), a turn that changed it still runs.
 export type View = {
   id: number;
   workspaceId: number;
   title: string;
   guide: boolean;
   worktree: boolean;
+  scope: GuideScope;
   base: string;
   head: string;
   sections: ViewSection[];
@@ -127,8 +137,47 @@ export async function listViews(db: Db, workspaceId: number): Promise<View[]> {
     .orderBy("id", "desc")
     .limit(1)
     .execute();
-  return rows.map(fromRow);
+  const scope = rows.length ? await guideScope(db, workspaceId) : "all";
+  return rows.map((r) => ({ ...fromRow(r), scope }));
 }
+
+// The Guide's scope sits beside its instructions in settings: the workspace has one Guide, and a column would be a
+// migration. A Guide from before scopes covers all of the changes.
+const scopeKey = (workspaceId: number) => `guides.scope.${workspaceId}`;
+async function guideScope(db: Db, workspaceId: number): Promise<GuideScope> {
+  const row = await db
+    .selectFrom("settings")
+    .select("value")
+    .where("key", "=", scopeKey(workspaceId))
+    .executeTakeFirst();
+  return isGuideScope(row?.value) ? row.value : "all";
+}
+
+// Where the Guide scopes' ends are now, from the workspace's last check (at) and its worktree.
+export async function scopeEnds(
+  db: Db,
+  workspaceId: number,
+  at: { mergeBase: string; head: string },
+): Promise<Required<{ [K in keyof ScopeEnds]: string }>> {
+  const now = await snapshot(db, workspaceId);
+  if (now.status !== "ok") throw new Error(now.message);
+  return {
+    mergeBase: at.mergeBase,
+    pushed: at.head,
+    committed: await headCommit(db, workspaceId),
+    snapshot: now.sha,
+  };
+}
+
+// What a scope covers, as start_guide and an update tell the agent.
+export const scopeWords: Record<GuideScope, string> = {
+  all: "all of the workspace's changes: the merge base → the worktree as it is now, uncommitted changes included",
+  pushed: "what's on GitHub: the merge base → its head",
+  unpushed: "the commits not pushed yet: GitHub's head → HEAD",
+  uncommitted:
+    "the uncommitted changes: HEAD → the worktree as it is now, untracked files included",
+  pinned: "the range picked for it",
+};
 
 // Told when a tool changed a workspace's view or its entries, so the UI refetches them while the agent works.
 const listeners = new Set<(workspaceId: number) => void>();
@@ -280,7 +329,7 @@ async function toolView(db: Db, workspaceId: number, _id: number | undefined) {
     .orderBy("id", "desc")
     .executeTakeFirst();
   if (!row) throw new Error("No Guide yet: call start_guide first");
-  return { ...fromRow(row), markdown: markdownOf(row) };
+  return { ...fromRow(row), scope: await guideScope(db, workspaceId), markdown: markdownOf(row) };
 }
 const viewArg = {};
 
@@ -440,10 +489,15 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
       name: "start_guide",
       annotations: closedTool,
       description:
-        "Start rewriting the workspace’s single Guide in place. Call before reading changes: it returns the pinned range and changed files. Write short thematic sections with embedded diffs using write_section, covering every changed file once. The workspace has one Guide; this replaces its content rather than creating another document.",
+        "Start rewriting the workspace’s single Guide in place. Call before reading changes: it returns the pinned range and changed files. Write short thematic sections with embedded diffs using write_section, covering every changed file once. The workspace has one Guide; this replaces its content rather than creating another document. The Guide keeps its scope: later updates cover the same part of the changes.",
       inputSchema: {
         type: "object",
         properties: {
+          scope: {
+            enum: ["all", "pushed", "unpushed", "uncommitted"],
+            description:
+              "The part of the workspace's changes the Guide covers: all (the default: merge base → worktree), pushed (what's on GitHub), unpushed (the commits not pushed yet) or uncommitted (HEAD → worktree). In place of base and head",
+          },
           base: {
             type: "string",
             description:
@@ -456,26 +510,38 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
           },
         },
       },
-      call: async (v: { base?: string; head?: string }) => {
+      call: async (v: { scope?: Exclude<GuideScope, "pinned">; base?: string; head?: string }) => {
         await requireInteractiveGuideWrite(db, workspaceId);
+        if (v.scope && (v.base || v.head)) throw new Error("Give scope, or base and head");
+        // Agents send whatever they send; pinned is what a range picked by base and head becomes, not one to ask for.
+        if (v.scope !== undefined && (!isGuideScope(v.scope) || (v.scope as string) === "pinned"))
+          throw new Error(`No scope ${v.scope}: all, pushed, unpushed or uncommitted`);
         const at = (await openedBefore(db, workspaceId)) ?? (await openWorktree(db, workspaceId));
         if (at.status !== "ok")
           throw new Error("message" in at ? at.message : `GitHub: ${at.status}`);
-        const base = v.base ? await resolveCommit(db, workspaceId, v.base) : at.mergeBase;
+        const ends = await scopeEnds(db, workspaceId, at);
         // ADR 0028: pinned to the worktree as it is, local changes and all, unless a commit is given.
-        const ofWorktree = !v.head || v.head === "worktree";
-        let head: string;
-        if (ofWorktree) {
-          const now = await snapshot(db, workspaceId);
-          if (now.status !== "ok") throw new Error(now.message);
-          head = now.sha;
-        } else head = await resolveCommit(db, workspaceId, v.head!);
+        const ofWorktree = v.scope
+          ? v.scope === "all" || v.scope === "uncommitted"
+          : !v.head || v.head === "worktree";
+        const picked = v.scope
+          ? rangeOf({ scope: v.scope, base: "", head: "", worktree: ofWorktree }, ends)!
+          : {
+              base: v.base ? await resolveCommit(db, workspaceId, v.base) : ends.mergeBase,
+              head: ofWorktree ? ends.snapshot : await resolveCommit(db, workspaceId, v.head!),
+            };
+        const { base, head } = picked;
+        // A range picked by its ends that lines up with a scope keeps that scope: base HEAD is the uncommitted changes.
+        const scope = v.scope ?? scopeOf({ ...picked, worktree: ofWorktree }, ends);
         const files = await changedFiles(db, { workspaceId, base, head });
-        const id = await replaceGuide(db, workspaceId, base, head, [], ofWorktree);
+        const id = await replaceGuide(db, workspaceId, base, head, [], {
+          scope,
+          worktree: ofWorktree,
+        });
         beingWritten(workspaceId, id);
         const listed = listFiles(files);
         return [
-          `Guide ${id} is being updated in place; the other tools write to it without a view parameter. It's pinned to ${base}${base === at.mergeBase ? " (the merge base)" : ""} → ${head}${ofWorktree ? " (the worktree as it is now, uncommitted changes included, as a commit)" : ""}.`,
+          `Guide ${id} is being updated in place; the other tools write to it without a view parameter. It covers ${scopeWords[scope]}, pinned to ${base} → ${head}${ofWorktree ? " (the worktree as a commit)" : ""}${scope === "pinned" ? "; updates keep this base" : "; updates follow this scope"}.`,
           `Read a diff with \`git diff ${base} ${head} -- <path>\`. Line numbers are the file's at the head (side "new") or, for removed lines, at the base (side "old").`,
           `Read a source file with \`git show ${head}:<path>\`; list available files with \`git ls-tree -r --name-only ${head}\`. Source-file line annotations use side "new".`,
           howToView,
@@ -668,7 +734,7 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
         return views
           .map((v) =>
             [
-              `View ${v.id}: ${v.title}${v.guide ? " (guide)" : ""}, ${v.base} → ${v.head}`,
+              `View ${v.id}: ${v.title}${v.guide ? " (guide)" : ""}, ${v.base} → ${v.head}, covering ${scopeWords[v.scope]}`,
               ...v.sections.map((s, i) => `  ${i + 1}. ${s.title}`),
             ].join("\n"),
           )
@@ -713,6 +779,10 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
   ];
 }
 
+// What an update keeps of the Guide it replaces: its scope, and whether its head is the worktree.
+export type GuideKept = { scope: GuideScope; worktree: boolean };
+export const allChanges: GuideKept = { scope: "all", worktree: true };
+
 // Keep the current Guide's identity across updates. Older legacy views remain inert in storage.
 async function replaceGuide(
   db: Db,
@@ -720,10 +790,16 @@ async function replaceGuide(
   base: string,
   head: string,
   sections: string[],
-  worktree = true,
+  kept: GuideKept = allChanges,
 ) {
+  const { scope, worktree } = kept;
   await rememberGuideReviewBaseline(db, workspaceId, { base, head });
   return db.transaction().execute(async (tx) => {
+    await tx
+      .insertInto("settings")
+      .values({ key: scopeKey(workspaceId), value: scope })
+      .onConflict((oc) => oc.column("key").doUpdateSet({ value: scope }))
+      .execute();
     const current = await tx
       .selectFrom("views")
       .select("id")
@@ -760,9 +836,10 @@ export async function publishGuide(
   base: string,
   head: string,
   sections: string[],
+  kept: GuideKept = allChanges,
 ) {
   await pinRevision(db, workspaceId, head);
-  const id = await replaceGuide(db, workspaceId, base, head, sections);
+  const id = await replaceGuide(db, workspaceId, base, head, sections, kept);
   emit({ workspaceId, what: "view" });
   return id;
 }

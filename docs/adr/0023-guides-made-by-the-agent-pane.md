@@ -20,6 +20,8 @@ Preparation checks coalesce; while a Guide turn is active, newer requests coales
 
 The canvas offers Guide, Changes, Files and the PR overview. There is no saved View library, New View action, repeated Guide titles, View removal or saved View prompt library. Legacy rows remain inert in SQLite without a destructive migration; the latest existing Guide is adopted and subsequent updates reuse it. Internal `views`/`view_id` names remain storage details for compatibility with entries and history.
 
+The Guide has a scope (glossary): all of the changes (merge base → worktree), one of the diff's layers (what's on GitHub, the commits not pushed, the uncommitted changes), or a range the agent pinned. `start_guide` takes a scope by name, or base and head; a range whose ends line up with a scope (base HEAD → the worktree is the uncommitted changes) keeps that scope, any other is pinned. The scope persists in `guides.scope.<workspace>`, beside its instructions, rather than as a `views` column: the workspace has one Guide, and it needs no migration. Automatic updates, Update Guide and the stale check work out the scope's range from its ends now (a pinned Guide keeps its base, and its head moves only if it was the worktree), so a Guide of the uncommitted changes stays one and isn't stale when the merge base moves. A first Guide covers all of the changes.
+
 Agent tools `publish_guide`, `start_guide`, `write_section`, `remove_section`, `read_guide`, `list_changed_files`, `add_explanation` and `add_finding` write to the same workspace Guide. `start_guide` resets it for interactive writing; requested session updates use publish_guide atomically. Findings remain opt-in. Source/diff embedding uses ADR 0026; immutable snapshots preserve code and review marks (ADR 0028, ADR 0014).
 
 ## Alternatives considered
@@ -27,9 +29,11 @@ Agent tools `publish_guide`, `start_guide`, `write_section`, `remove_section`, `
 - Keep numbered Guide versions in the navigation: obscures which document is current.
 - Delete old records through a migration: unnecessarily removes historic entry anchors.
 - Disposable tool-free background Guide sessions: hide the conversation and prevent automatic updates from sharing the user-visible session.
+- Keep only the Guide's two commits and treat every Guide as merge base → worktree: a Guide of the uncommitted changes shows as stale at once and the next update widens it to the whole branch.
+- A flag for "base is the merge base": covers the uncommitted case but not the pushed and not-pushed layers, and says less than the scope the diff already names.
 
 ## Consequences
 
-A Guide update changes its content and pinned range while preserving its identity. File review marks remain keyed to contents. Legacy documents and saved prompts are no longer exposed in the UI. Custom focus applies to later automatic updates until changed. The Guide session can inspect the repository directly; the former bounded diff-evidence shortcut is retired.
+A Guide update changes its content and pinned range while preserving its identity and scope. File review marks remain keyed to contents. Legacy documents and saved prompts are no longer exposed in the UI. Custom focus applies to later automatic updates until changed. The Guide session can inspect the repository directly; the former bounded diff-evidence shortcut is retired.
 
 The default Guide prompt groups implementation thematically, followed by a dedicated Tests section and a dedicated Generated section, omitting empty groups. File group metadata uses the same shared path classifier as Changes.
