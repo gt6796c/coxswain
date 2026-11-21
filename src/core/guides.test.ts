@@ -360,11 +360,19 @@ test("automatic Guide updates wait while an agent turn writes the Guide", async 
   assert.equal(turns, 0, "the finished Guide is current, so nothing replaces it");
   assert.equal((await listViews(db, 1))[0].sections.length, 1);
 
-  // Once the turn has ended, a change updates the Guide as before.
+  // The review is a requested Guide: a change marks it out of date but leaves it; Update Guide replaces it.
+  assert.equal((await listViews(db, 1))[0].requested, true);
   writeFileSync(join(worktree, "a.ts"), "export const value = 3;\n");
   await ensureGuide(db, 1);
+  assert.equal(guideWorkPending(1), false);
+  assert.equal(turns, 0, "a change leaves the requested Guide alone");
+  assert.equal((await listViews(db, 1))[0].sections[0].title, "Review");
+  await ensureGuide(db, 1, true);
   await idle(db);
   assert.equal(turns, 1);
+  const [replaced] = await listViews(db, 1);
+  assert.equal(replaced.sections[0].title, "Behavior");
+  assert.equal(replaced.requested, false, "the automatic Guide that replaced it updates as usual");
 });
 
 test("a Guide of the uncommitted changes keeps its scope through updates", async (t) => {
@@ -435,9 +443,9 @@ test("a Guide of the uncommitted changes keeps its scope through updates", async
   assert.equal(guideWorkPending(1), false);
   assert.equal(prompts.length, 0, "a current uncommitted-only Guide isn't replaced");
 
-  // The worktree moves on: the update covers the uncommitted changes again, not the whole branch (b.ts).
+  // The worktree moves on: Update Guide covers the uncommitted changes again, not the whole branch (b.ts).
   writeFileSync(join(worktree, "a.ts"), "export const value = 3;\n");
-  await ensureGuide(db, 1);
+  await ensureGuide(db, 1, true);
   await idle(db);
   assert.equal(prompts.length, 1);
   assert.match(prompts[0], /covers the uncommitted changes/);

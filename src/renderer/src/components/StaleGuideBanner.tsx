@@ -1,14 +1,17 @@
 import { useState } from "react";
+import { match } from "ts-pattern";
 import { Button } from "./button";
 import { ErrorText } from "./text";
 import { SpinnerIcon } from "./icons";
 
 export function StaleGuideBanner({
+  requested,
   running,
   automatic,
   onRefresh,
   onEnableAutomatic,
 }: {
+  requested: boolean; // an agent wrote it on request: kept, not refreshed automatically
   running: boolean;
   automatic: boolean;
   onRefresh: () => Promise<void>;
@@ -35,7 +38,14 @@ export function StaleGuideBanner({
     >
       {running && <SpinnerIcon />}
       <span className="min-w-0 flex-1">
-        {running ? "This Guide is out of date. Refreshing…" : "This Guide is out of date."}
+        {match({ running, requested })
+          .with({ running: true }, () => "This Guide is out of date. Refreshing…")
+          .with(
+            { requested: true },
+            () =>
+              "This Guide is out of date. An agent wrote it on request, so it's kept until Refresh Guide replaces it.",
+          )
+          .otherwise(() => "This Guide is out of date.")}
       </span>
       <Button disabled={pending || running} onClick={() => void run(onRefresh)}>
         Refresh Guide

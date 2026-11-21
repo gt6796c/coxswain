@@ -1952,6 +1952,7 @@ export function App() {
                                 <GuideStaleNotice
                                   key={currentWorkspace.id}
                                   workspaceId={currentWorkspace.id}
+                                  requested={canvasView!.requested}
                                 />
                               )}
                             {!canvasView && view !== "files" && shownDiffs?.length === 0 && (
@@ -2162,12 +2163,13 @@ function scrollOf(scroller: HTMLElement): Scroll {
 }
 
 // A stale Guide stays readable; actions use core writes and their normal invalidation events.
-function GuideStaleNotice({ workspaceId }: { workspaceId: number }) {
+function GuideStaleNotice({ workspaceId, requested }: { workspaceId: number; requested: boolean }) {
   const automatic = useQuery(core("getAutoUpdate", workspaceId));
   const run = useQuery(core("getGuideRun", workspaceId)).data;
   return (
     <div data-stale-guide-banner className="shrink-0 pt-[var(--ui-toolbar-height)]">
       <StaleGuideBanner
+        requested={requested}
         running={run?.state === "running"}
         automatic={automatic.data !== false}
         onRefresh={() => window.coxswain.regenerateGuide(workspaceId)}
