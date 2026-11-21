@@ -1262,6 +1262,7 @@ app.whenReady().then(async () => {
     answerPermission(id, optionId),
   );
   await (await import("../core/open-target")).startControl(db, app.getPath("userData")); // ADR 0047
+  (await import("./show-thread")).forwardShowThread(); // ADR 0048
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

@@ -11,6 +11,8 @@ import { currentMergeBase, openWorktree } from "./git.ts";
 import { openTarget } from "./open-target.ts";
 import { listProjects } from "./projects.ts";
 import { emit } from "./events.ts";
+import { match, P } from "ts-pattern";
+import { requestShowThread } from "./show-thread.ts";
 import { anchored, byAgent, describe, fence, who } from "./thread-context.ts";
 import { turnEnded, viewTools } from "./views.ts";
 
@@ -122,6 +124,48 @@ export function terminalTools(db: Db, workspaceId: number): McpTool[] {
           .execute();
         emit({ workspaceId, what: "entries" });
         return `Resolved thread ${args.thread_id}.`;
+      },
+    },
+    {
+      name: "show_thread",
+      annotations: closedTool,
+      description:
+        'Scroll coxswain to a thread, a finding or a comment, so the user sees it there: when you point the user at one ("see [G1-L2]") or they ask to see it. Give thread_id from read_review, or text: words of its first comment that only it has, such as its label.',
+      inputSchema: {
+        type: "object",
+        properties: {
+          thread_id: { type: "integer" },
+          text: {
+            type: "string",
+            description:
+              "In place of thread_id: words only that thread's first comment has, e.g. [G1-L2]",
+          },
+        },
+      },
+      call: async (args: { thread_id?: number; text?: string }) => {
+        const roots = (await liveEntries(db, workspaceId)).filter((e) => !e.parentId);
+        const root = await match(args)
+          .with({ thread_id: P.number.select() }, async (id) => {
+            await thread(id);
+            return roots.find((e) => e.id === id);
+          })
+          .with({ text: P.string.select() }, async (text) => {
+            const found = roots.filter((e) => e.body.includes(text));
+            if (found.length > 1)
+              throw new Error(
+                `${found.length} threads have "${text}": ${found.map((e) => e.id).join(", ")}. Give thread_id.`,
+              );
+            if (!found.length)
+              throw new Error(`No thread has "${text}". Use read_review with all.`);
+            return found[0];
+          })
+          .otherwise(() => {
+            throw new Error("Give thread_id or text");
+          });
+        if (!root) throw new Error("That thread isn't in the workspace's review.");
+        return requestShowThread(root)
+          ? `coxswain shows thread ${root.id}${root.path ? ` (${root.path})` : ""}.`
+          : "coxswain has no window open to show it in.";
       },
     },
     {

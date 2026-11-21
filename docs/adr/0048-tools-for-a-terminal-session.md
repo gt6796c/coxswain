@@ -28,11 +28,16 @@ coxswain's tools are served only to pane sessions, on a port that changes every 
    entry isn't an agent's: the user's comments and their replies to findings, with thread ids and code; with `all`, the
    agent's own open threads too, so a second review can skip findings already there and resolve those that no longer
    hold),
-   `reply_to_thread` (an answer entry), `resolve_thread` (not a thread on GitHub: the user resolves those there) and
-   `finish_guide`. A pane turn ending marks its views written (glossary "Being written"); a terminal session has no turn
-   coxswain sees, so it calls `finish_guide`.
-5. **All of it is in new files** (`src/core/terminal-tools.ts`, the bridge) plus the socket's dispatch in
-   `open-target.ts`. The MCP answering and argument check are a copy of `agents.ts`'s, so no upstream file changes.
+   `reply_to_thread` (an answer entry), `resolve_thread` (not a thread on GitHub: the user resolves those there),
+   `show_thread` and `finish_guide`. A pane turn ending marks its views written (glossary "Being written"); a terminal
+   session has no turn coxswain sees, so it calls `finish_guide`.
+5. **`show_thread` moves the window** to a thread, by its id or by words only its first comment has (a review's label,
+   `[G1-L2]`), as picking it in the sidebar does. The core hands the thread's first entry to a listener
+   (`src/core/show-thread.ts`); the main process sends it to the window (`src/main/show-thread.ts`), which comes forward
+   without the keyboard, so the user keeps typing in the terminal.
+6. **All of it is in new files** (`src/core/terminal-tools.ts`, `show-thread.ts` in core, main and renderer, the bridge)
+   plus the socket's dispatch in `open-target.ts`. The MCP answering and argument check are a copy of `agents.ts`'s.
+   `show_thread` needs a one-line hook in each of `src/main/index.ts` and `App.tsx`, and a listener in the preload.
 
 ## Alternatives considered
 

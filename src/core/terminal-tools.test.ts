@@ -17,6 +17,7 @@ const { openWorktree, openedWorktree } = await import("./git.ts");
 const { startControl, openTarget } = await import("./open-target.ts");
 const { writeCatalog } = await import("./terminal-tools.ts");
 const { addNote } = await import("./entries.ts");
+const { onShowThread } = await import("./show-thread.ts");
 home.mock.restore();
 syncBuiltinESMExports();
 Object.assign(process.env, {
@@ -159,6 +160,20 @@ test("a terminal session gets its branch's tools, reads the user's comments and 
   const everything = await session.call("read_review", { all: true });
   assert.match(everything.text, new RegExp(`^1 open thread\\(s\\)[^]*Thread ${note.id}, on`));
   assert.match(everything.text, /You: It reads better\.$/);
+
+  // show_thread hands the thread's first entry to the window, by id or by words only it has.
+  assert.match((await session.call("show_thread", { thread_id: note.id })).text, /no window open/);
+  const shown: number[] = [];
+  const stop = onShowThread((root) => shown.push(root.id));
+  assert.equal(
+    (await session.call("show_thread", { text: "alpha?" })).text,
+    `coxswain shows thread ${note.id} (a.ts).`,
+  );
+  assert.deepEqual(shown, [note.id]);
+  assert.match((await session.call("show_thread", { text: "nowhere" })).text, /No thread has/);
+  assert.match((await session.call("show_thread", { thread_id: 999 })).text, /No thread 999/);
+  assert.match((await session.call("show_thread", {})).text, /Give thread_id or text/);
+  stop();
   await session.call("resolve_thread", { thread_id: note.id });
   assert.equal((await session.call("read_review", { all: true })).text, "No open thread.");
   const root = await db

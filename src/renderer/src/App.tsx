@@ -2,6 +2,7 @@ import { useGuideSidebar } from "./useGuideSidebar";
 import { viewSections, type SectionPart } from "./view-sections";
 import { StaleGuideBanner } from "./components/StaleGuideBanner";
 import { isGuideStale } from "./stale-guide";
+import { useShowThread } from "./show-thread";
 import { PreserveReviewScroll } from "./components/PreserveReviewScroll";
 import { reviewSourceDestination, type ReviewSurface } from "./source-destination";
 import { scrollToThread } from "./components/scroll-to-thread";
@@ -947,6 +948,9 @@ export function App() {
     else await show(threadLocation(root));
     setThreadPicks((n) => n + 1);
   };
+  useShowThread(
+    (r) => void (r.workspaceId === shown.current.ws ? viewThread(r.id) : show(threadLocation(r))),
+  ); // ADR 0048
   const canvasReady =
     view === "files"
       ? !!pr.commits
