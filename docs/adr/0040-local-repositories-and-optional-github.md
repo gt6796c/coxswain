@@ -24,7 +24,8 @@ second kind of project.
 2. **Three ways to add one:**
    - **A GitHub repository** from the list: cloned, as before.
    - **Add Local Repository…**: a folder the user picks in a native dialog. It must be in a git repository with at
-     least one commit; the project is the repository's top level. If its `origin` remote is on github.com, the project
+     least one commit; the project is the repository's top level. If its `origin` remote is on github.com, directly or
+     through an SSH host alias whose `HostName` is github.com (`ssh -G`, which reads the config without connecting), the project
      remembers its `owner/name` (ADR 0006's _Detect_) and gets every GitHub feature, on the user's own checkout.
    - **New Project…**: a new folder, picked in a native save dialog, which coxswain makes, `git init`s and gives an
      empty first commit, with the user's own git identity. A folder that isn't a git repository yet can't be added;

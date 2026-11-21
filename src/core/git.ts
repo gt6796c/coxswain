@@ -192,7 +192,7 @@ export async function addLocalRepository(db: Db, folder: string): Promise<Projec
   if (!(await hasRef(top, "HEAD")))
     throw new Error(`${top} has no commits yet; commit something first, then add it`);
   const origin = await gitText(top, ["remote", "get-url", "origin"]).catch(() => "");
-  return addLocalProject(db, top, basename(top), gitHubOf(origin.trim()));
+  return addLocalProject(db, top, basename(top), await gitHubOfRemote(origin.trim()));
 }
 
 // ADR 0040: a new project in a new, empty folder at path: git init, on the user's default branch (else main), and an
@@ -220,6 +220,24 @@ export function gitHubOf(url: string): string | null {
     /^(?:(?:https?|ssh|git):\/\/(?:[^@/]+@)?|[^@/:]+@)github\.com[:/]([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/,
   );
   return m ? `${m[1]}/${m[2]}` : null;
+}
+
+// gitHubOf, also through an SSH host alias whose HostName is github.com: the usual way to keep one SSH key per GitHub
+// account (`Host work-github` in ~/.ssh/config). `ssh -G` only evaluates the config; it doesn't connect. ssh: extra
+// options, for a test's own config file.
+export async function gitHubOfRemote(url: string, ssh: string[] = []): Promise<string | null> {
+  const direct = gitHubOf(url);
+  if (direct) return direct;
+  const m =
+    url.match(/^ssh:\/\/(?:[^@/]+@)?([\w.-]+)(?::\d+)?\/(.+)$/) ??
+    url.match(/^(?:[^@/:]+@)?([\w.-]+):(?!\/)(.+)$/);
+  if (!m || m[1].startsWith("-")) return null;
+  const hostName = await new Promise<string>((done) =>
+    execFile("ssh", [...ssh, "-G", "--", m[1]], { timeout: 5_000 }, (e, out) =>
+      done(e ? "" : (out.match(/^hostname (\S+)$/m)?.[1] ?? "")),
+    ),
+  );
+  return hostName.toLowerCase() === "github.com" ? gitHubOf(`git@github.com:${m[2]}`) : null;
 }
 
 function ghProtocol(): Promise<string> {
