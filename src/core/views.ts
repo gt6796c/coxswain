@@ -745,9 +745,19 @@ export function viewTools(db: Db, workspaceId: number): McpTool[] {
       name: "read_guide",
       annotations: readTool,
       description:
-        "Read the workspace’s Guide: its range and section headings. Updates replace this Guide in place.",
-      inputSchema: { type: "object", properties: {} },
-      call: async () => {
+        "Read the workspace’s Guide: its range and section headings, or with section, that section's markdown as written, to rewrite it with write_section. Updates replace this Guide in place.",
+      inputSchema: {
+        type: "object",
+        properties: { section: { type: "integer", description: "A section's number" } },
+      },
+      call: async (a: { section?: number }) => {
+        if (a.section !== undefined) {
+          const { markdown } = await toolView(db, workspaceId, undefined);
+          const section = markdown[a.section - 1];
+          if (section === undefined)
+            throw new Error(`The Guide has sections 1 to ${markdown.length}`);
+          return section;
+        }
         const views = await listViews(db, workspaceId);
         if (!views.length) return "No Guide yet.";
         return views
