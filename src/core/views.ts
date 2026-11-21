@@ -233,7 +233,10 @@ Three kinds of fenced blocks do more than show code:
   the view's snapshot, even if it has no changes. Quote paths containing spaces. It supports line comments,
   explanations and its own Reviewed mark, separate from the file's diff. Use this to trace existing code.
 Each path can be embedded once, as either a file or a diff. Views can contain only prose and diagrams and need no diff.
-Before an embedded file or diff, write a sentence or two saying what it does in this change and why that matters.`;
+Before an embedded file or diff, write a sentence or two saying what it does in this change and why that matters.
+Prose can link within the view with a fragment: [G1-C1](#G1-C1) goes to the finding or explanation whose text starts
+with [G1-C1], and [Risks](#risks) to the section with that heading, its anchor as GitHub makes it (lower case, each space
+a dash, punctuation dropped).`;
 
 const howToGuide = (style: string) => `${style}
 1. Follow the writing instructions above for focus, style and section order. Read writing-beats with read_skill for additional guidance consistent with those instructions. For a requested review, also read pr and code-review.

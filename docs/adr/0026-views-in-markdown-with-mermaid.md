@@ -53,6 +53,12 @@ gracefully when it's wrong. It must still embed file diffs as the user reviews t
    `add_group`; `add_explanation` and `add_finding` stay; `remove_section` and `list_views` manage views
    ([ADR 0023](0023-guides-made-by-the-agent-pane.md)). `start_view`'s result carries the syntax and how to write a
    guide or another view.
+6. **Fragment links stay in the view** (glossary _Guide link_). `[G1-C1](#G1-C1)` goes to the thread whose first
+   entry starts with `[G1-C1]` (an open one, the view's own first), else `[x](#some-heading)` to the section whose
+   heading has that anchor as GitHub makes it (`src/renderer/src/guide-links.ts`). Fragments survive the sanitizer
+   and read the same on GitHub, so no new syntax; labels already open findings in the review skills, so findings need
+   no id the agent would have to learn. They work in section prose and the threads on it, not in threads on code lines
+   (Pierre draws those).
 
 Guide sections render their heading and prose beside their embedded cards, with no separate navigation sidebar
 or file overview. At 960 px of canvas width the layout uses two columns; below that it stacks the explanation

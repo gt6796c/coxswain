@@ -10,6 +10,15 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - `ponytail:` a scope left empty (all the uncommitted changes committed) keeps its old Guide, still out of date, and Update Guide does nothing; widening it to all of the changes is the upgrade.
 - A requested Guide (one an agent turn wrote with `start_guide`: a review, or a Guide asked for in the agent pane or a terminal session) is no longer rewritten by automatic updates once the code moves on, which replaced a review with a plain reading guide. It shows _out of date_, saying it's kept, until Update Guide (or the banner's Refresh Guide) replaces it with an automatic Guide of the same scope, which then updates as usual. Kept in settings (`guides.requested.<workspace>`), like the scope.
 - Tests cover the race and scoped Guides (start_guide inferring the uncommitted scope, an update keeping it, the stale check per scope).
+## 2026-11-21 — Guide links
+
+- A fragment link in a view's prose now stays in the view (glossary _Guide link_, ADR 0026): `[G1-C1](#G1-C1)` scrolls
+  to the thread whose first entry starts with that label, and `[Risks](#risks)` selects the section with that heading,
+  matched by its GitHub anchor. A review's summary can now link each finding. Before, a fragment link did nothing,
+  since only http(s) links open, in the browser.
+- The view syntax the agent reads (`howToView`) says how to write them. Resolution is in
+  `src/renderer/src/guide-links.ts`, with tests.
+- Limit: links work in section prose and the threads on it, not in threads on code lines, which Pierre draws.
 
 ## 2026-11-07 — Release v1.10.3
 

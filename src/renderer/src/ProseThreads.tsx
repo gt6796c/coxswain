@@ -10,6 +10,7 @@ import {
 import type { ProseAnchor, ReviewEntry } from "../../core/entries";
 import { DraftBox, EntryThread, postEntry, quoted } from "./Thread";
 import type { Ask, Turn } from "./Viewer";
+import { FragmentLinks } from "./components/text";
 
 // ADR 0036: threads on a view's prose. The section's text is its prose's text nodes in order, leaving out diagrams
 // (drawn late) and the threads shown between its blocks; a thread's quote is found at its offset in that text (or, if
@@ -104,6 +105,7 @@ export function ProseThreads(props: {
   turns: Record<number, Turn>;
   onAsk: Ask;
   onAnswerPermission: (threadId: number, id: string, optionId: string) => void;
+  onLink?: (href: string) => void; // a fragment link in the prose or its threads (glossary "Guide link")
   children: ReactNode;
 }) {
   const { viewId, section, entries } = props;
@@ -216,13 +218,15 @@ export function ProseThreads(props: {
   // Threads whose quote isn't there: outdated (the section was rewritten), or not found. At the top of the section.
   const unplaced = threads.filter((e) => !places[e.id]);
   return (
-    <div ref={root} onContextMenu={onContextMenu}>
-      {unplaced.length > 0 && (
-        <div data-prose-thread className="max-w-[72ch] select-none">
-          {unplaced.map(thread)}
-        </div>
-      )}
-      <ProseBlockEnd.Provider value={after}>{props.children}</ProseBlockEnd.Provider>
-    </div>
+    <FragmentLinks.Provider value={props.onLink}>
+      <div ref={root} onContextMenu={onContextMenu}>
+        {unplaced.length > 0 && (
+          <div data-prose-thread className="max-w-[72ch] select-none">
+            {unplaced.map(thread)}
+          </div>
+        )}
+        <ProseBlockEnd.Provider value={after}>{props.children}</ProseBlockEnd.Provider>
+      </div>
+    </FragmentLinks.Provider>
   );
 }

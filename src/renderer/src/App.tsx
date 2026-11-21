@@ -49,6 +49,7 @@ import {
   type Scroll,
 } from "./components/restore-scroll";
 import { ErrorText } from "./components/text";
+import { guideLinkTarget } from "./guide-links";
 import {
   Centered,
   Dialog,
@@ -910,6 +911,29 @@ export function App() {
   const openQuickly = (path: string) => {
     setPalette(null);
     openSourceFile(path);
+  };
+  // A Guide link in the view's prose: to a thread by its label, this view's first, or to a section by its heading.
+  const followGuideLink = (href: string) => {
+    const own = (e: ReviewEntry) => (e.viewId === canvasView?.id ? 0 : 1);
+    const threads = (allEntries ?? []).toSorted((a, b) => own(a) - own(b));
+    match(guideLinkTarget(href, threads, canvasView?.sections.map((x) => x.title) ?? []))
+      .with({ thread: P.select() }, (id) => void viewThread(id))
+      .with(
+        { section: P.select() },
+        (section) =>
+          // As a pick in the Sections sidebar does.
+          void show({
+            view: "sections",
+            viewId: canvasView?.id,
+            commit: undefined,
+            scope: undefined,
+            section,
+            at: undefined,
+            file: undefined,
+          }),
+      )
+      .with(null, () => {})
+      .exhaustive();
   };
   // Revealing a thread must happen before its file/section can mount. Preserve its Reviewed mark.
   // Bumped by each thread picked: picking the one shown again leaves the location as it is, but should scroll again.
@@ -2031,6 +2055,7 @@ export function App() {
                                         turns={turns}
                                         onAsk={ask}
                                         onAnswerPermission={answerPermission}
+                                        onLink={followGuideLink}
                                       >
                                         <div
                                           className={cn(
