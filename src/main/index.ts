@@ -359,6 +359,7 @@ const menu = Menu.buildFromTemplate([
         accelerator: "CmdOrCtrl+W",
         click: () => runAction("close-workspace-tab"),
       },
+      { label: "Remove Workspace…", click: () => runAction("remove-workspace") },
       { role: "close", accelerator: "CmdOrCtrl+Shift+W" },
     ],
   },

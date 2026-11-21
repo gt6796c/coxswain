@@ -533,7 +533,6 @@ function NativeWorkspaceBar(
       .with("toggle-agents", () => props.onToggleAgents())
       .with("settings", () => props.onSettings())
       .with("pr-overview", () => props.onShowPr())
-      .with("remove-workspace", () => current && props.onRemove(current))
       .otherwise(() => {
         const w = props.workspaces.find((w) => `select-${w.id}` === node);
         if (w && (w.id !== current?.id || props.settingsActive)) props.onSelect(w);

@@ -3,6 +3,13 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-11-21 — Remove Workspace with native tabs
+
+- The native workspace tabs (macOS 26 glass) have no context menu, and the bar's `remove-workspace` press had no button
+  sending it, so a workspace could not be removed there. _File ▸ Remove Workspace…_ is a new action (`remove-workspace`)
+  for the current workspace, so it is also in the command palette; the HTML tabs keep their right-click menu. The dead
+  press case is gone.
+
 ## 2026-11-07 — Release v1.10.3
 
 - Release includes provider-neutral review-only instructions, optional Amp implementation connections, remote-thread handoffs with submission acknowledgment, and immediate/one-shot remote updates from the top Settings menu.
