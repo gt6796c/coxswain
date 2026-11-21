@@ -287,6 +287,9 @@ async function prepare(
     return;
   }
   const views = await listViews(db, workspaceId);
+  // An agent turn is writing the Guide, a requested review say, and has just emptied it to start: an automatic update
+  // would replace its work. The next change or window focus after the turn checks again; Update Guide goes ahead.
+  if (!force && views.some((view) => view.guide && view.writing)) return;
   if (
     !force &&
     views.some(

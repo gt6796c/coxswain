@@ -3,6 +3,12 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-11-21 — Automatic Guide updates wait for a Guide being written
+
+- A requested review (or any agent pane turn writing the Guide) starts with `start_guide`, which empties the Guide until its sections come. An automatic update, set off meanwhile by a window focus or a settings change, saw an empty Guide as stale and replaced the review with a plain reading guide, and held the update lock so the review's own writes were refused. Automatic updates now skip a Guide that is being written; the next change or focus after the turn checks again. Update Guide still goes ahead.
+- Still open: a Guide pinned to another range than merge base → worktree (a review of only the uncommitted changes) is replaced by the next automatic update after its turn, even with no change.
+- A test covers the race and fails without the fix. All 129 tests, typecheck, lint, formatting and production build pass.
+
 ## 2026-11-07 — Release v1.10.3
 
 - Release includes provider-neutral review-only instructions, optional Amp implementation connections, remote-thread handoffs with submission acknowledgment, and immediate/one-shot remote updates from the top Settings menu.

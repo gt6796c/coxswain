@@ -24,7 +24,7 @@ const {
   setGuideSessionDriver,
   guideWorkPending,
 } = await import("./guides.ts");
-const { listViews, viewTools } = await import("./views.ts");
+const { listViews, viewTools, turnEnded } = await import("./views.ts");
 const { emit } = await import("./events.ts");
 const { startBackground } = await import("./background.ts");
 home.mock.restore();
@@ -295,6 +295,76 @@ test("Guide generation uses one durable chat session, coalesces updates and publ
     "guide-session-2",
     "later automatic/default updates retain the replacement conversation",
   );
+});
+
+test("automatic Guide updates wait while an agent turn writes the Guide", async (t) => {
+  const repo = join(temp, "review-repo");
+  mkdirSync(repo);
+  git(repo, "init", "-b", "main");
+  writeFileSync(join(repo, "a.ts"), "export const value = 1;\n");
+  git(repo, "add", ".");
+  git(repo, "commit", "-m", "base");
+  const db = openDatabase(join(temp, "review-guides.db"));
+  t.after(async () => {
+    setGuideSessionDriver();
+    await db.destroy();
+  });
+  await db
+    .insertInto("projects")
+    .values({ id: 1, github: null, name: "review-repo", path: repo, last_opened_at: "" })
+    .execute();
+  await db
+    .insertInto("workspaces")
+    .values({
+      id: 1,
+      project_id: 1,
+      pr_number: null,
+      branch: "feature",
+      base_branch: "main",
+      last_opened_at: "",
+    })
+    .execute();
+  assert.equal((await openWorktree(db, 1)).status, "ok");
+  const worktree = await openedWorktree(db, 1);
+  writeFileSync(join(worktree, "a.ts"), "export const value = 2;\n");
+  let turns = 0;
+  setGuideSessionDriver({
+    create: async () => ({ agentSessionId: "guide-session", agent: "claude" }),
+    run: async (database, _session, prompt, _settings, onStart) => {
+      onStart();
+      turns++;
+      await viewTools(database, 1)
+        .find((tool) => tool.name === "publish_guide")!
+        .call({
+          request_id: /request_id=([^,]+)/.exec(prompt)![1],
+          sections: [{ title: "Behavior", body: "Changes the value.", files: ["a.ts"] }],
+        } as never);
+      return { status: "ok" };
+    },
+  });
+  const call = (name: string, args: object) =>
+    viewTools(db, 1)
+      .find((tool) => tool.name === name)!
+      .call(args as never);
+
+  // An agent pane turn starts a review: start_guide empties the Guide until its sections come.
+  await call("start_guide", {});
+  assert.equal((await listViews(db, 1))[0].sections.length, 0);
+  await ensureGuide(db, 1);
+  assert.equal(guideWorkPending(1), false);
+  assert.equal(turns, 0, "an automatic update leaves the Guide being written alone");
+  await call("write_section", { markdown: "## Review\nOne finding.\n```diff path=a.ts\n```" });
+  turnEnded(1);
+  await ensureGuide(db, 1);
+  assert.equal(guideWorkPending(1), false);
+  assert.equal(turns, 0, "the finished Guide is current, so nothing replaces it");
+  assert.equal((await listViews(db, 1))[0].sections.length, 1);
+
+  // Once the turn has ended, a change updates the Guide as before.
+  writeFileSync(join(worktree, "a.ts"), "export const value = 3;\n");
+  await ensureGuide(db, 1);
+  await idle(db);
+  assert.equal(turns, 1);
 });
 
 test("Guide settings default to Claude Opus, remember each agent and persist separately", async () => {
