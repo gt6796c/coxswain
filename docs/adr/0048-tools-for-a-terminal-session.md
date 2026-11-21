@@ -35,9 +35,16 @@ coxswain's tools are served only to pane sessions, on a port that changes every 
    `[G1-L2]`), as picking it in the sidebar does. The core hands the thread's first entry to a listener
    (`src/core/show-thread.ts`); the main process sends it to the window (`src/main/show-thread.ts`), which comes forward
    without the keyboard, so the user keeps typing in the terminal.
-6. **All of it is in new files** (`src/core/terminal-tools.ts`, `show-thread.ts` in core, main and renderer, the bridge)
-   plus the socket's dispatch in `open-target.ts`. The MCP answering and argument check are a copy of `agents.ts`'s.
-   `show_thread` needs a one-line hook in each of `src/main/index.ts` and `App.tsx`, and a listener in the preload.
+6. **Replies on a session's findings reach it** through the agent pane. The session names itself once
+   (`set_session_name`, its name as ListAgents shows it; nothing in its environment says it), and each finding or
+   explanation it adds afterwards keeps that name in settings (`terminal.replies.<thread>`, no migration). A reply on
+   such a thread still goes to the agent pane, since replies on agent threads always do, but its prompt says the
+   thread is the session's: pass the reply on with SendMessage and answer "Forwarded to …", or answer it directly if
+   the session can't be reached (`src/core/terminal-replies.ts`). The session answers with `reply_to_thread`.
+7. **All of it is in new files** (`src/core/terminal-tools.ts`, `terminal-replies.ts`, `show-thread.ts` in core, main
+   and renderer, the bridge) plus the socket's dispatch in `open-target.ts`. The MCP answering and argument check are a
+   copy of `agents.ts`'s. `show_thread` needs a one-line hook in each of `src/main/index.ts` and `App.tsx`, and a
+   listener in the preload; forwarding needs one in `review.ts`'s `ask`.
 
 ## Alternatives considered
 
@@ -51,7 +58,10 @@ coxswain's tools are served only to pane sessions, on a port that changes every 
 ## Consequences
 
 - The user comments as a note (the composer's toggle off Agent); Agent sends it to the pane's session instead. The
-  terminal session sees comments when asked (`read_review`): coxswain can't wake it.
+  terminal session sees comments when asked (`read_review`): coxswain can't wake it. Only a reply on its own findings
+  wakes it, passed on by the pane's agent, which needs SendMessage (Claude Code) and a turn of its own.
+- Forwarding is the agent following its prompt, not a guarantee; a push into the session (Claude Code channels) would
+  take the pane out of the path.
 - A session in the user's own worktree needs adoption (ADR 0046); without it coxswain refuses a branch checked out
   elsewhere.
 - Opening a workspace makes its project the latest, so a window on another project follows it (ADR 0047).

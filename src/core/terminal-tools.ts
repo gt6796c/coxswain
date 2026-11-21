@@ -13,6 +13,7 @@ import { listProjects } from "./projects.ts";
 import { emit } from "./events.ts";
 import { match, P } from "ts-pattern";
 import { requestShowThread } from "./show-thread.ts";
+import { lastEntryId, rememberThreads } from "./terminal-replies.ts";
 import { anchored, byAgent, describe, fence, who } from "./thread-context.ts";
 import { turnEnded, viewTools } from "./views.ts";
 
@@ -67,8 +68,43 @@ export function terminalTools(db: Db, workspaceId: number): McpTool[] {
       throw new Error(`No thread ${id} here. Use a thread id read_review gives.`);
     return root;
   };
+  // The session's name for SendMessage, from set_session_name: what it adds after that forwards replies to it.
+  let session: string | null = null;
+  const remembering = (t: McpTool): McpTool =>
+    t.name !== "add_finding" && t.name !== "add_explanation"
+      ? t
+      : {
+          ...t,
+          call: async (args) => {
+            const before = await lastEntryId(db);
+            const text = await t.call(args);
+            if (!session)
+              return `${text}\nReplies the user writes on it go to coxswain's agent. To have them reach you, call set_session_name first.`;
+            await rememberThreads(db, workspaceId, before, session);
+            return text;
+          },
+        };
   return [
-    ...viewTools(db, workspaceId).filter((t) => t.name !== "publish_guide"),
+    ...viewTools(db, workspaceId)
+      .filter((t) => t.name !== "publish_guide")
+      .map(remembering),
+    {
+      name: "set_session_name",
+      annotations: closedTool,
+      description:
+        "Give coxswain your session's name as ListAgents shows it (\"This session is backend-b0\"). Call it once, before add_finding or add_explanation: replies the user writes in coxswain on what you add afterwards are then passed on to you with SendMessage by coxswain's agent, and you answer them with reply_to_thread.",
+      inputSchema: {
+        type: "object",
+        properties: { name: { type: "string" } },
+        required: ["name"],
+      },
+      call: async (args: { name: string }) => {
+        const name = args.name.trim();
+        if (!name) throw new Error("name is empty");
+        session = name;
+        return `Replies on the findings and explanations you add from now on are passed on to ${name}.`;
+      },
+    },
     {
       name: "read_review",
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },

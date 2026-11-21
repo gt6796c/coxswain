@@ -30,6 +30,7 @@ import {
   unseen,
   who,
 } from "./thread-context.ts";
+import { forwardNote } from "./terminal-replies.ts";
 import { type Check, githubGraphql, readJobLog } from "./github";
 import {
   dropThread,
@@ -294,7 +295,8 @@ async function ask(
     where: anchored(root) ? where(root) : "the review",
     body: question.body,
   };
-  const prompt = formatComment(comment, unseen(question, thread, agentSessionId));
+  const context = [unseen(question, thread, agentSessionId), await forwardNote(db, threadId)]; // ADR 0048
+  const prompt = formatComment(comment, context.filter(Boolean).join("\n\n"));
   await db
     .updateTable("entries")
     .set({ agent_session_id: agentSessionId })

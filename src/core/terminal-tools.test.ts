@@ -18,6 +18,7 @@ const { startControl, openTarget } = await import("./open-target.ts");
 const { writeCatalog } = await import("./terminal-tools.ts");
 const { addNote } = await import("./entries.ts");
 const { onShowThread } = await import("./show-thread.ts");
+const { forwardNote } = await import("./terminal-replies.ts");
 home.mock.restore();
 syncBuiltinESMExports();
 Object.assign(process.env, {
@@ -182,6 +183,26 @@ test("a terminal session gets its branch's tools, reads the user's comments and 
     .where("id", "=", note.id)
     .executeTakeFirstOrThrow();
   assert.ok(root.resolved_at);
+  assert.equal((await session.call("finish_guide")).isError, false);
+
+  // Replies on what a named session adds are passed on to it; before it names itself, the finding says how.
+  await session.call("start_guide");
+  const finding = (body: string) =>
+    session.call("add_finding", { path: "a.ts", side: "new", start_line: 1, end_line: 1, body });
+  assert.match((await finding("[G1-C1] unnamed")).text, /call set_session_name first/);
+  assert.equal((await session.call("set_session_name", { name: " backend-b0 " })).isError, false);
+  assert.doesNotMatch((await finding("[G1-C2] named")).text, /set_session_name/);
+  const findings = await db
+    .selectFrom("entries")
+    .select(["id", "body"])
+    .where("kind", "=", "finding")
+    .orderBy("id")
+    .execute();
+  assert.equal(await forwardNote(db, findings[0].id), "");
+  assert.match(
+    await forwardNote(db, findings[1].id),
+    new RegExp(`SendMessage to "backend-b0": thread ${findings[1].id},`),
+  );
   assert.equal((await session.call("finish_guide")).isError, false);
 
   // A directory coxswain can't make a workspace of is refused on the socket, and the bridge passes that on.
