@@ -102,6 +102,10 @@ pnpm dev       # run with hot reload
 own data in a SQLite database in the app's data folder. It stores only what GitHub and git don't have: your notes, the
 agent's answers and views, and which files you've reviewed.
 
+In a monorepo whose parts have their own agent instructions, `COXSWAIN_AGENT_FOLDER=backend pnpm dev` starts the agent
+pane's sessions in `backend/`, so the agent loads that folder's `CLAUDE.md`, `AGENTS.md` and `.claude/`; the rest of
+the repository stays readable.
+
 ## Docs
 
 | Doc                                  | What it holds                                  |

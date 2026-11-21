@@ -21,6 +21,7 @@ import {
 } from "./attachments";
 import { type Commit, diffSize, openedWorktree, type Size } from "./git";
 import { snapshotOf } from "./snapshot";
+import { sessionPlace } from "./agent-folder";
 import { chat } from "./agent-chat";
 import {
   type AgentCommand,
@@ -125,9 +126,10 @@ export type Permission = {
 
 // session: carry on this agent session. mcp: MCP servers the session gets: coxswain's tools for the agent pane
 // (ADR 0023). picks: the model and effort to set, the user's (agentPicks). oneShot: a system prompt for a run with no
-// tools that isn't kept (askOnce).
+// tools that isn't kept (askOnce). note: where the session runs, when that isn't the checkout (sessionParams).
 type RunOptions = {
   cwd: string;
+  note?: string;
   prompt: string;
   attachments?: Attachment[];
   session?: string;
@@ -174,7 +176,9 @@ const agents: Record<
     // Names checked against the adapter's OPTION_REBUILDS_SESSION (0.81.2).
     // A one-shot run replaces Claude Code's system prompt, has no tools, doesn't think and isn't kept in its session list.
     meta: (o) => ({
-      ...(o.mcp?.length && { systemPrompt: { append: paneContext } }),
+      ...(o.mcp?.length && {
+        systemPrompt: { append: o.note ? `${paneContext}${o.note}\n` : paneContext },
+      }),
       ...(o.oneShot && { systemPrompt: o.oneShot }),
       claudeCode: {
         options: {
@@ -489,15 +493,23 @@ const configOf = (
   if (isLatest) latest.set(name, config);
 };
 
+// A session's place and options, for session/new, resume and load (sessionPlace).
+// ponytail: Codex gets its instructions once per adapter process, so its sessions aren't told about the folder.
+function sessionParams(name: Agent, o: RunOptions) {
+  const place = sessionPlace(o);
+  return {
+    cwd: place.cwd,
+    ...(place.additionalDirectories && { additionalDirectories: place.additionalDirectories }),
+    mcpServers: o.mcp ?? [],
+    _meta: agents[name].meta({ ...o, note: place.note }) as Record<string, unknown>,
+  };
+}
+
 // Opens a session for a run: a new one, or the given one, resumed if this adapter process hasn't got it open. Sets the
 // picks, model first (the effort levels depend on it), and auto mode: the agent decides what would ask (ADR 0013).
 async function openSession(name: Agent, o: RunOptions): Promise<{ a: Adapter; sessionId: string }> {
   const a = await adapter(name);
-  const params = {
-    cwd: o.cwd,
-    mcpServers: o.mcp ?? [],
-    _meta: agents[name].meta(o) as Record<string, unknown>,
-  };
+  const params = sessionParams(name, o);
   let config: acp.SessionConfigOption[] | null | undefined;
   let sessionId = o.session ?? "";
   if (!sessionId)
@@ -696,9 +708,7 @@ async function history(
   try {
     const { configOptions } = await a.agent.request(acp.methods.agent.session.load, {
       sessionId,
-      cwd,
-      mcpServers: mcp,
-      _meta: agents[name].meta({ cwd, prompt: "", mcp }) as Record<string, unknown>,
+      ...sessionParams(name, { cwd, prompt: "", mcp }),
     });
     a.open.add(sessionId);
     if (configOptions) configOf(name, sessionId, configOptions);

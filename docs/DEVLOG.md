@@ -3,6 +3,13 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-11-20 — Agent folder
+
+- `COXSWAIN_AGENT_FOLDER` starts the agent pane's sessions in a folder of the checkout (a monorepo's `backend/`), so the agent loads that folder's instructions, skills and settings; the checkout goes in ACP's `additionalDirectories` and the pane instructions name the root, since coxswain's tools keep repository-relative paths. See ADR 0018 decision 14.
+- Background jobs, git, language servers and snapshots stay on the checkout. A folder that's missing, absolute or outside the checkout falls back to it. Tests cover both; the pane test fails with the folder disabled.
+- ponytail: one folder per run, from the environment (`agent-folder.ts`); choosing per session would need a picker in the pane and the folder stored with the session. Codex isn't told where the root is (its instructions are per adapter process).
+- No schema change.
+
 ## 2026-11-07 — Release v1.10.3
 
 - Release includes provider-neutral review-only instructions, optional Amp implementation connections, remote-thread handoffs with submission acknowledgment, and immediate/one-shot remote updates from the top Settings menu.
