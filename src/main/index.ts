@@ -1261,6 +1261,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("agents:answer-permission", (_, id: string, optionId: string | null) =>
     answerPermission(id, optionId),
   );
+  await (await import("../core/open-target")).startControl(db, app.getPath("userData")); // ADR 0047
   createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
