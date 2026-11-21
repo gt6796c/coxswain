@@ -1,11 +1,13 @@
 import type { Db } from "./db";
+import { addEntry, type NewEntry } from "./entries.ts";
+import { emit } from "./events.ts";
 
-// ADR 0048: the user's replies on what a terminal session wrote reach that session. The session names itself
+// ADR 0048: the user's replies on what a terminal session wrote wait for that session. The session names itself
 // (set_session_name, as ListAgents shows it); each finding or explanation it adds afterwards remembers that name in
-// settings (a column would be a migration). A reply sent to the agent on such a thread carries forwardText, so
-// coxswain's agent passes it on with SendMessage, the one way into another Claude session.
-// ponytail: only Claude Code agent panes have SendMessage; with another agent, or the session gone, the agent answers
-// itself. A push straight into the session (Claude Code channels) would drop the agent pane from the path.
+// settings (a column would be a migration). A reply on such a thread stays a note instead of going to the agent pane,
+// so it waits in read_review until the user tells the session to take the comments, all at once.
+// ponytail: nothing tells the session comments are waiting; the user does. A "Send to <session>" action could pass one
+// message for all of them.
 
 const key = (threadId: number) => `terminal.replies.${threadId}`;
 
@@ -42,15 +44,19 @@ export async function lastEntryId(db: Db): Promise<number> {
   return Number(row?.id ?? 0);
 }
 
-// What a reply on the thread adds to the agent's prompt: forwarding it, when a terminal session wrote the thread.
-export async function forwardNote(db: Db, threadId: number): Promise<string> {
+// A reply on a terminal session's thread, kept as a note for it: nothing goes to the agent pane, so null.
+export async function waitForTerminal(db: Db, e: NewEntry): Promise<null> {
+  await addEntry(db, "note", e);
+  emit({ workspaceId: e.workspaceId, what: "entries" });
+  return null;
+}
+
+// The terminal session a thread's replies wait for, or null when they go to the agent pane as usual.
+export async function terminalSession(db: Db, threadId: number): Promise<string | null> {
   const row = await db
     .selectFrom("settings")
     .select("value")
     .where("key", "=", key(threadId))
     .executeTakeFirst();
-  return row ? forwardText(row.value, threadId) : "";
+  return row?.value ?? null;
 }
-
-export const forwardText = (session: string, threadId: number) =>
-  `This thread began with what the Claude session \`${session}\` wrote from a terminal: it owns this review and answers in the thread itself. Pass my comment on with SendMessage to "${session}": thread ${threadId}, where it points, and my words as written. Then answer only "Forwarded to ${session}." If SendMessage can't reach it, answer my comment yourself, starting "${session} isn't reachable, so I'm answering."`;

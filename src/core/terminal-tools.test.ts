@@ -18,7 +18,7 @@ const { startControl, openTarget } = await import("./open-target.ts");
 const { writeCatalog } = await import("./terminal-tools.ts");
 const { addNote } = await import("./entries.ts");
 const { onShowThread } = await import("./show-thread.ts");
-const { forwardNote } = await import("./terminal-replies.ts");
+const { terminalSession, waitForTerminal } = await import("./terminal-replies.ts");
 home.mock.restore();
 syncBuiltinESMExports();
 Object.assign(process.env, {
@@ -185,7 +185,7 @@ test("a terminal session gets its branch's tools, reads the user's comments and 
   assert.ok(root.resolved_at);
   assert.equal((await session.call("finish_guide")).isError, false);
 
-  // Replies on what a named session adds are passed on to it; before it names itself, the finding says how.
+  // Replies on what a named session adds wait for it in read_review; before it names itself, the finding says how.
   await session.call("start_guide");
   const finding = (body: string) =>
     session.call("add_finding", { path: "a.ts", side: "new", start_line: 1, end_line: 1, body });
@@ -198,11 +198,20 @@ test("a terminal session gets its branch's tools, reads the user's comments and 
     .where("kind", "=", "finding")
     .orderBy("id")
     .execute();
-  assert.equal(await forwardNote(db, findings[0].id), "");
-  assert.match(
-    await forwardNote(db, findings[1].id),
-    new RegExp(`SendMessage to "backend-b0": thread ${findings[1].id},`),
+  assert.equal(await terminalSession(db, findings[0].id), null);
+  assert.equal(await terminalSession(db, findings[1].id), "backend-b0");
+  assert.equal((await session.call("read_review")).text, "No open thread waits on you.");
+  assert.equal(
+    await waitForTerminal(db, {
+      workspaceId: workspace.id,
+      body: "Is this right?",
+      parentId: findings[1].id,
+    }),
+    null,
   );
+  const waiting = (await session.call("read_review")).text;
+  assert.match(waiting, new RegExp(`^1 open thread\\(s\\)[^]*Thread ${findings[1].id}, on`));
+  assert.match(waiting, /Me: Is this right\?$/);
   assert.equal((await session.call("finish_guide")).isError, false);
 
   // A directory coxswain can't make a workspace of is refused on the socket, and the bridge passes that on.

@@ -293,7 +293,7 @@ const api = {
   // A thread's *Send to agent*: its latest note becomes a question, answered in the thread. Null if it has none.
   sendThread: (workspaceId: number, threadId: number): Promise<ReviewEntry | null> =>
     ipcRenderer.invoke("review:send-thread", workspaceId, threadId),
-  askQuestion: (question: NewEntry): Promise<ReviewEntry> =>
+  askQuestion: (question: NewEntry): Promise<ReviewEntry | null> =>
     ipcRenderer.invoke("review:ask", question),
   // A thread's Stop: its question comes off the queue, or the turn answering it stops.
   stopQuestion: (threadId: number): Promise<void> => ipcRenderer.invoke("review:stop", threadId),
