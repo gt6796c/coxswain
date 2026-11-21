@@ -3,6 +3,19 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-11-20 — Chat follows the latest message while at the end
+
+- The agent pane's transcript follows new content again, but only while the reader is at its end (within 24 px). Scrolled
+  up, they stay put, as the 2026-10-31 change intended, and a _Latest_ button floats over the transcript's bottom to say
+  there is more below and jump there. `useFollowLatest` (`src/renderer/src/follow-latest.ts`) watches the scroller and
+  an inner content wrapper with one ResizeObserver, so streamed text, late-rendered blocks and a growing composer all
+  keep a following reader at the end. Its own scrolls are told apart from the reader's by the `scrollTop` it last set,
+  so a scroll event that arrives after more content landed doesn't count as the reader leaving.
+- Verified in the running development app with `scripts/check-chat-follow.mjs` (synthetic transcript content, no agent
+  message): five growths in a row at the end stay at the end; scrolled up 400 px, new content moves the reader 0 px and
+  shows _Latest_; _Latest_ returns to the end and following resumes.
+- No core or storage changes.
+
 ## 2026-11-07 — Release v1.10.3
 
 - Release includes provider-neutral review-only instructions, optional Amp implementation connections, remote-thread handoffs with submission acknowledgment, and immediate/one-shot remote updates from the top Settings menu.

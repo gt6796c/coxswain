@@ -12,6 +12,7 @@ import { FindBar } from "./FindBar";
 import { chatFindTarget, refreshFind, registerFindTarget } from "./find";
 import { Button } from "./components/button";
 import {
+  ArrowDownIcon,
   ArrowUpIcon,
   ChevronDownIcon,
   GaugeIcon,
@@ -27,6 +28,7 @@ import { cn, divider, muted, noDrag, selectable, titleBar } from "./components/s
 import { count, shortDateTime } from "./format";
 import { core, queryClient } from "./queries";
 import { setAgentPane, useAgentPane } from "./agent-pane";
+import { useFollowLatest } from "./follow-latest";
 
 export const agentNames: Record<Agent, string> = { claude: "Claude Code", codex: "Codex" };
 
@@ -131,15 +133,17 @@ export function Agents({ workspace, onViewThread, composerPrompt }: Props) {
   useEffect(() => {
     refreshFind(findTarget);
   }, [findTarget, entries]);
-  // Open a loaded session at its latest message once. Sending and streaming never move the reader.
+  // Open a loaded session at its latest message once. From there new content scrolls the transcript along only while the
+  // reader is at its end; scrolled up, they stay put and Jump to Latest shows.
+  const transcriptContent = useRef<HTMLDivElement>(null);
+  const { atEnd, jumpToEnd } = useFollowLatest(transcript, transcriptContent);
   const openedSession = useRef<string | null>(null);
   useLayoutEffect(() => {
     const id = session?.agentSessionId ?? null;
     if (openedSession.current === id) return;
     if (loading) return;
     openedSession.current = id;
-    const scroller = transcript.current;
-    if (scroller) scroller.scrollTop = scroller.scrollHeight;
+    jumpToEnd();
   }, [session?.agentSessionId, loading]);
 
   const send = async () => {
@@ -251,43 +255,62 @@ export function Agents({ workspace, onViewThread, composerPrompt }: Props) {
         </div>
       </div>
       <FindBar pane="chat" />
-      <div
-        ref={transcript}
-        tabIndex={-1}
-        className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto p-4"
-        style={{ overflowAnchor: "none" }}
-      >
-        {loading && !running && <div className={cn("m-auto text-xs", muted)}>Loading session…</div>}
-        {entries.length === 0 && !running && !loading && (
-          <div className={cn("m-auto text-xs", muted)}>
-            Ask {agentNames[agent]} something to start an agent session
+      <div className="relative flex min-h-0 flex-1 flex-col">
+        <div
+          ref={transcript}
+          tabIndex={-1}
+          className="flex min-h-0 flex-1 flex-col overflow-y-auto"
+          style={{ overflowAnchor: "none" }}
+        >
+          <div ref={transcriptContent} className="flex flex-1 flex-col gap-3 p-4">
+            {loading && !running && (
+              <div className={cn("m-auto text-xs", muted)}>Loading session…</div>
+            )}
+            {entries.length === 0 && !running && !loading && (
+              <div className={cn("m-auto text-xs", muted)}>
+                Ask {agentNames[agent]} something to start an agent session
+              </div>
+            )}
+            {entries.map((e, i) => (
+              <div key={i} data-find-entry={i} className="contents">
+                <Entry entry={e} onViewThread={onViewThread} />
+              </div>
+            ))}
+            {pendingMessage && <Entry entry={pendingMessage} />}
+            <TurnStatus
+              running={running}
+              permission={permission}
+              error={error ?? attachmentError}
+              signIn={
+                live?.signIn
+                  ? {
+                      agent: agentNames[agent],
+                      run: async () => {
+                        await window.coxswain.signInAgent(agent);
+                        patch({ error: null });
+                      },
+                    }
+                  : undefined
+              }
+              onAnswer={(optionId) => {
+                window.coxswain.answerPermission(permission!.id, optionId);
+              }}
+            />
           </div>
+        </div>
+        {!atEnd && (
+          <Button
+            className={cn(
+              "absolute bottom-2 left-1/2 flex -translate-x-1/2 items-center gap-1 bg-white text-xs shadow-sm dark:bg-neutral-900",
+              noDrag,
+            )}
+            title="Jump to Latest"
+            onClick={jumpToEnd}
+          >
+            <ArrowDownIcon />
+            Latest
+          </Button>
         )}
-        {entries.map((e, i) => (
-          <div key={i} data-find-entry={i} className="contents">
-            <Entry entry={e} onViewThread={onViewThread} />
-          </div>
-        ))}
-        {pendingMessage && <Entry entry={pendingMessage} />}
-        <TurnStatus
-          running={running}
-          permission={permission}
-          error={error ?? attachmentError}
-          signIn={
-            live?.signIn
-              ? {
-                  agent: agentNames[agent],
-                  run: async () => {
-                    await window.coxswain.signInAgent(agent);
-                    patch({ error: null });
-                  },
-                }
-              : undefined
-          }
-          onAnswer={(optionId) => {
-            window.coxswain.answerPermission(permission!.id, optionId);
-          }}
-        />
       </div>
       {/* The composer: one box, the model and effort and Send (Stop while a turn runs) along its bottom. */}
       <div
