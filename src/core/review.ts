@@ -30,6 +30,7 @@ import {
   unseen,
   who,
 } from "./thread-context.ts";
+import { terminalSession, waitForTerminal } from "./terminal-replies.ts";
 import { type Check, githubGraphql, readJobLog } from "./github";
 import {
   dropThread,
@@ -233,9 +234,10 @@ export async function askQuestion(
   onChat: (threadId: number, entry: ChatEntry, agentSessionId: string) => void,
   onPermission: (threadId: number, p: Permission) => Promise<string | null>,
   onQueued: (threadId: number) => void,
-): Promise<{ question: ReviewEntry; agentSessionId: string; turn: Promise<TurnResult> }> {
+): Promise<{ question: ReviewEntry; agentSessionId: string; turn: Promise<TurnResult> } | null> {
   if (e.parentId && (await inCommentThread(db, e.parentId)))
     throw new Error("A comment thread doesn't go to the agent");
+  if (e.parentId && (await terminalSession(db, e.parentId))) return waitForTerminal(db, e); // ADR 0048
   return ask(db, await addEntry(db, "question", e), onChat, onPermission, onQueued);
 }
 
@@ -265,6 +267,7 @@ export async function sendThread(
     .orderBy("id", "desc")
     .executeTakeFirst();
   if (note?.kind !== "note" || (await inCommentThread(db, threadId))) return null;
+  if (await terminalSession(db, threadId)) return null; // ADR 0048: it waits for its terminal session
   await db.updateTable("entries").set({ kind: "question" }).where("id", "=", note.id).execute();
   return ask(db, { ...note, kind: "question" }, onChat, onPermission, onQueued);
 }

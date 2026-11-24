@@ -2,6 +2,7 @@ import { useGuideSidebar } from "./useGuideSidebar";
 import { viewSections, type SectionPart } from "./view-sections";
 import { StaleGuideBanner } from "./components/StaleGuideBanner";
 import { isGuideStale } from "./stale-guide";
+import { useShowThread } from "./show-thread";
 import { PreserveReviewScroll } from "./components/PreserveReviewScroll";
 import { reviewSourceDestination, type ReviewSurface } from "./source-destination";
 import { scrollToThread } from "./components/scroll-to-thread";
@@ -48,6 +49,7 @@ import {
   type Scroll,
 } from "./components/restore-scroll";
 import { ErrorText } from "./components/text";
+import { guideLinkTarget } from "./guide-links";
 import {
   Centered,
   Dialog,
@@ -910,6 +912,29 @@ export function App() {
     setPalette(null);
     openSourceFile(path);
   };
+  // A Guide link in the view's prose: to a thread by its label, this view's first, or to a section by its heading.
+  const followGuideLink = (href: string) => {
+    const own = (e: ReviewEntry) => (e.viewId === canvasView?.id ? 0 : 1);
+    const threads = (allEntries ?? []).toSorted((a, b) => own(a) - own(b));
+    match(guideLinkTarget(href, threads, canvasView?.sections.map((x) => x.title) ?? []))
+      .with({ thread: P.select() }, (id) => void viewThread(id))
+      .with(
+        { section: P.select() },
+        (section) =>
+          // As a pick in the Sections sidebar does.
+          void show({
+            view: "sections",
+            viewId: canvasView?.id,
+            commit: undefined,
+            scope: undefined,
+            section,
+            at: undefined,
+            file: undefined,
+          }),
+      )
+      .with(null, () => {})
+      .exhaustive();
+  };
   // Revealing a thread must happen before its file/section can mount. Preserve its Reviewed mark.
   // Bumped by each thread picked: picking the one shown again leaves the location as it is, but should scroll again.
   const [threadPicks, setThreadPicks] = useState(0);
@@ -947,6 +972,9 @@ export function App() {
     else await show(threadLocation(root));
     setThreadPicks((n) => n + 1);
   };
+  useShowThread(
+    (r) => void (r.workspaceId === shown.current.ws ? viewThread(r.id) : show(threadLocation(r))),
+  ); // ADR 0048
   const canvasReady =
     view === "files"
       ? !!pr.commits
@@ -1677,6 +1705,7 @@ export function App() {
                   >
                     <PaneBar
                       tab={view}
+                      guideScope={views?.[0]?.scope}
                       files={fileCountLabel(
                         view === "diffs" ? diffPr.changed : pr.changed,
                         view === "diffs" ? reviewedQuery.data : liveReviewedQuery.data,
@@ -1947,10 +1976,16 @@ export function App() {
                             )}
                             {view === "sections" &&
                               !showFile &&
-                              isGuideStale(canvasView, pr.commits?.mergeBase, pr.snapshot) && (
+                              isGuideStale(canvasView, {
+                                mergeBase: pr.commits?.mergeBase,
+                                pushed: pr.commits?.head,
+                                committed,
+                                snapshot: pr.snapshot,
+                              }) && (
                                 <GuideStaleNotice
                                   key={currentWorkspace.id}
                                   workspaceId={currentWorkspace.id}
+                                  requested={canvasView!.requested}
                                 />
                               )}
                             {!canvasView && view !== "files" && shownDiffs?.length === 0 && (
@@ -2029,6 +2064,7 @@ export function App() {
                                         turns={turns}
                                         onAsk={ask}
                                         onAnswerPermission={answerPermission}
+                                        onLink={followGuideLink}
                                       >
                                         <div
                                           className={cn(
@@ -2161,13 +2197,14 @@ function scrollOf(scroller: HTMLElement): Scroll {
 }
 
 // A stale Guide stays readable; actions use core writes and their normal invalidation events.
-function GuideStaleNotice({ workspaceId }: { workspaceId: number }) {
+function GuideStaleNotice({ workspaceId, requested }: { workspaceId: number; requested: boolean }) {
   const automatic = useQuery(core("getAutoUpdate", workspaceId));
   const run = useQuery(core("getGuideRun", workspaceId)).data;
   return (
     <div data-stale-guide-banner className="shrink-0 pt-[var(--ui-toolbar-height)]">
       <StaleGuideBanner
-        running={run?.state === "running"}
+        requested={requested}
+        running={run?.state === "running" && !run.check}
         automatic={automatic.data !== false}
         onRefresh={() => window.coxswain.regenerateGuide(workspaceId)}
         onEnableAutomatic={() => window.coxswain.setAutoUpdate(workspaceId, true)}
@@ -2196,7 +2233,9 @@ function WritingViewNotice() {
 function GuideProgress({ workspaceId, hasGuide }: { workspaceId: number; hasGuide: boolean }) {
   const job = useQuery(core("getGuideRun", workspaceId)).data;
   if (!job || (job.state !== "running" && job.state !== "failed")) return null;
-  const label = match({ state: job.state, hasGuide })
+  const label = match({ state: job.state, hasGuide, check: job.check === true })
+    .with({ state: "running", check: true }, () => "Checking review threads against the changes…")
+    .with({ state: "failed", check: true }, () => "Thread check failed")
     .with({ state: "running", hasGuide: true }, () => "Updating guide…")
     .with({ state: "running", hasGuide: false }, () => "Generating guide…")
     .with({ state: "failed" }, () => "Guide update failed")
@@ -2223,9 +2262,14 @@ function GuideProgress({ workspaceId, hasGuide }: { workspaceId: number; hasGuid
           <span className="min-w-0 flex-1 truncate" title={job.error ?? undefined}>
             {job.error}
           </span>
-          <Button variant="link" onClick={() => void window.coxswain.regenerateGuide(workspaceId)}>
-            Retry
-          </Button>
+          {!job.check && (
+            <Button
+              variant="link"
+              onClick={() => void window.coxswain.regenerateGuide(workspaceId)}
+            >
+              Retry
+            </Button>
+          )}
         </>
       )}
     </div>

@@ -3,6 +3,31 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-11-24 — A requested Guide's threads are checked when the code moves on
+
+- A requested Guide (a review) is kept when the code changes, so it missed the thread check an automatic update now does, and a review's findings stayed open after the fix landed. In place of the update, the Guide session now only checks the open threads against the new range and resolves the fixed ones (`publish_guide` with no sections), leaving the review's sections as written. Once per range, and only with a thread open. The progress line says "Checking review threads…", the out-of-date banner keeps Refresh Guide available, and a failed check offers no Retry, which would replace the review. ADR 0023.
+
+## 2026-11-21 — Automatic Guide updates leave a requested Guide alone; the Guide keeps its scope
+
+- A requested review (or any agent pane turn writing the Guide) starts with `start_guide`, which empties the Guide until its sections come. An automatic update, set off meanwhile by a window focus or a settings change, saw an empty Guide as stale and replaced the review with a plain reading guide, and held the update lock so the review's own writes were refused. Automatic updates now skip a Guide that is being written; the next change or focus after the turn checks again. Update Guide still goes ahead.
+- The Guide keeps a scope ([ADR 0023](adr/0023-guides-made-by-the-agent-pane.md)): all of the changes, what's on GitHub, the commits not pushed, the uncommitted changes, or a pinned range. `start_guide` takes `scope`, and a base and head that line up with one (base `HEAD` → the worktree) keep it. A Guide of only the uncommitted changes used to show _out of date_ at once (its base isn't the merge base) and was widened to the whole branch by the next update; now updates, Update Guide and the stale warning follow its scope. The Guide tab's tooltip names a scope other than all.
+- `ponytail:` a scope left empty (all the uncommitted changes committed) keeps its old Guide, still out of date, and Update Guide does nothing; widening it to all of the changes is the upgrade.
+- A requested Guide (one an agent turn wrote with `start_guide`: a review, or a Guide asked for in the agent pane or a terminal session) is no longer rewritten by automatic updates once the code moves on, which replaced a review with a plain reading guide. It shows _out of date_, saying it's kept, until Update Guide (or the banner's Refresh Guide) replaces it with an automatic Guide of the same scope, which then updates as usual. Kept in settings (`guides.requested.<workspace>`), like the scope.
+- Tests cover the race and scoped Guides (start_guide inferring the uncommitted scope, an update keeping it, the stale check per scope).
+
+## 2026-11-21 — Guide links
+
+- A fragment link in a view's prose now stays in the view (glossary _Guide link_, ADR 0026): `[G1-C1](#G1-C1)` scrolls
+  to the thread whose first entry starts with that label, and `[Risks](#risks)` selects the section with that heading,
+  matched by its GitHub anchor. A review's summary can now link each finding. Before, a fragment link did nothing,
+  since only http(s) links open, in the browser.
+- The view syntax the agent reads (`howToView`) says how to write them. Resolution is in
+  `src/renderer/src/guide-links.ts`, with tests.
+- Limit: links work in section prose and the threads on it, not in threads on code lines, which Pierre draws.
+- `read_guide` takes a section number and returns that section's markdown as written (ADR 0023). An agent asked
+  to change one section, say to add these links to a summary, can now read it back instead of rewriting it from
+  memory or reading coxswain's database.
+
 ## 2026-11-23 — Release v1.11.0
 
 - Includes verified thread resolutions during Guide updates, complete collapsed summaries with diff-matched colors, and PR creator labels in workspace tabs.

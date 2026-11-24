@@ -98,9 +98,21 @@ export async function startControl(db: Db, userData: string): Promise<Server | n
   // Half-open: a client like `nc` closes its end once it has written the line, and still waits for the answer.
   const server = createServer({ allowHalfOpen: true }, (socket) => {
     socket.on("error", () => {});
-    const lines = createInterface({ input: socket });
+    const lines = createInterface({ input: socket }).on("error", () => {}); // the socket's, again
     lines.once("line", (line) => {
+      // ADR 0048: a terminal session's tools, on the connection that asked for them.
+      if (line.startsWith("mcp "))
+        return void import("./terminal-tools.ts").then((t) =>
+          t.serveTerminal(db, userData, socket, lines, line.slice(4)),
+        );
       lines.close();
+      if (line.startsWith("remove "))
+        return void import("./terminal-tools.ts")
+          .then((t) => t.removeBranch(db, line.slice(7)))
+          .then(
+            (removed) => socket.end(`${removed}\n`),
+            (e: Error) => socket.end(`error: ${e.message}\n`),
+          );
       void openText(db, line).then(
         (opened) => socket.end(`opened ${opened}\n`),
         (e: Error) => socket.end(`error: ${e.message}\n`),
@@ -117,6 +129,11 @@ export async function startControl(db: Db, userData: string): Promise<Server | n
   });
   if (!listening) return null;
   chmodSync(path, 0o600);
+  await (
+    await import("./terminal-tools.ts")
+  )
+    .writeCatalog(db, userData)
+    .catch((e: Error) => console.error(`terminal tools: ${e.message}`));
   server.unref();
   process.once("exit", () => rmSync(path, { force: true }));
   return server;

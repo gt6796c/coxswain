@@ -293,7 +293,7 @@ const api = {
   // A thread's *Send to agent*: its latest note becomes a question, answered in the thread. Null if it has none.
   sendThread: (workspaceId: number, threadId: number): Promise<ReviewEntry | null> =>
     ipcRenderer.invoke("review:send-thread", workspaceId, threadId),
-  askQuestion: (question: NewEntry): Promise<ReviewEntry> =>
+  askQuestion: (question: NewEntry): Promise<ReviewEntry | null> =>
     ipcRenderer.invoke("review:ask", question),
   // A thread's Stop: its question comes off the queue, or the turn answering it stops.
   stopQuestion: (threadId: number): Promise<void> => ipcRenderer.invoke("review:stop", threadId),
@@ -538,6 +538,12 @@ const api = {
   // Greys View > Back and Forward out at either end of the canvas's history.
   setNavigation: (canBack: boolean, canForward: boolean) =>
     ipcRenderer.send("navigation", canBack, canForward),
+  // ADR 0048: a terminal session's show_thread: the thread's first entry, to go to.
+  onShowThread: (callback: (root: ReviewEntry) => void) => {
+    const listener = (_: unknown, root: ReviewEntry) => callback(root);
+    ipcRenderer.on("show-thread", listener);
+    return () => void ipcRenderer.off("show-thread", listener);
+  },
   // A native menu item or key picked: the id of the action to run (ADR 0027).
   onAction: (callback: (id: string) => void) => {
     const listener = (_: unknown, id: string) => callback(id);

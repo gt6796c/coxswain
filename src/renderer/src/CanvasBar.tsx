@@ -1,8 +1,17 @@
 import { Button, SegmentedControl } from "./components/button";
 import { ChevronDownIcon } from "./components/icons";
 import { cn, divider, titleBar } from "./components/styles";
+import type { GuideScope } from "../../shared/guide-scope";
 
 export type PaneTab = "diffs" | "files" | "sections";
+
+const scopeTitle: Record<GuideScope, string> = {
+  all: "",
+  pushed: ", covering what’s on GitHub",
+  unpushed: ", covering the commits not pushed yet",
+  uncommitted: ", covering the uncommitted changes",
+  pinned: ", covering a range picked for it",
+};
 
 export type HistoryTab = "commits" | "turns";
 
@@ -10,6 +19,7 @@ export type HistoryTab = "commits" | "turns";
 // file diffs) and Files (the whole file tree). It drags the window, like the canvas's bar.
 export function PaneBar(props: {
   tab: PaneTab;
+  guideScope?: GuideScope; // the Guide's scope, named in its tab's tooltip unless it's all of the changes
   files: string | undefined; // review progress, formatted for the sidebar visibility setting
   onTab: (tab: PaneTab) => void;
   onHide: () => void;
@@ -27,7 +37,11 @@ export function PaneBar(props: {
         value={props.tab}
         onChange={props.onTab}
         options={[
-          { value: "sections", label: "Guide", title: "The guide’s sections and threads" },
+          {
+            value: "sections",
+            label: "Guide",
+            title: `The guide’s sections and threads${scopeTitle[props.guideScope ?? "all"]}`,
+          },
           {
             value: "diffs",
             label: `Changes ${props.files ?? ""}`.trim(),

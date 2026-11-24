@@ -107,6 +107,9 @@ test("views without diffs pin files, validate embeds and keep file review separa
   assert.equal(await call("list_changed_files", {}), "The view has no changed files.");
   const worktree = join(temp, "coxswain/worktrees/test/repo/branch-feature");
   await call("write_section", { view: view.id, markdown: "## Overview\nNo diff needed." });
+  // A section reads back as written, to rewrite it.
+  assert.equal(await call("read_guide", { section: 1 }), "## Overview\nNo diff needed.");
+  await assert.rejects(call("read_guide", { section: 2 }), /sections 1 to 1/);
   await call("write_section", {
     view: view.id,
     markdown: '## Source\n```file path=a.ts\n```\n```file path="directory/a b.ts"\n```',

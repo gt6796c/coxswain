@@ -1,10 +1,13 @@
 import type { View } from "../../core/views";
+import { rangeOf, type ScopeEnds } from "../../shared/guide-scope.ts";
 
-// Compare both ends of the Guide's range; an unresolved snapshot must not flash a stale warning.
+// A Guide is stale once its scope's range moved on from the one it was written for: an uncommitted-only Guide when
+// HEAD or the worktree moves, not when the merge base does. An end not known yet must not flash a stale warning.
 export function isGuideStale(
-  guide: Pick<View, "guide" | "base" | "head"> | null,
-  base: string | undefined,
-  snapshot: string | null,
+  guide: Pick<View, "guide" | "base" | "head" | "scope" | "worktree"> | null,
+  ends: ScopeEnds,
 ) {
-  return !!guide?.guide && !!base && !!snapshot && (guide.base !== base || guide.head !== snapshot);
+  if (!guide?.guide) return false;
+  const now = rangeOf(guide, ends);
+  return !!now && (now.base !== guide.base || now.head !== guide.head);
 }

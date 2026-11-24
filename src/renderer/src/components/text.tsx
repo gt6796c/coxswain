@@ -1,4 +1,5 @@
 import {
+  type ComponentProps,
   createContext,
   type ReactNode,
   useContext,
@@ -26,11 +27,30 @@ import { diagramConfig, diagramPresentation } from "./diagram-theme";
 const code =
   "rounded bg-neutral-100 px-1.5 py-0.5 font-mono text-xs select-text dark:bg-neutral-800";
 
+// Follows a fragment link (#…) in prose under it, e.g. to the Guide's own sections and threads (glossary "Guide link").
+// Without one, a fragment link does nothing.
+export const FragmentLinks = createContext<((href: string) => void) | undefined>(undefined);
+
+function Link({ node: _node, ...p }: ComponentProps<"a"> & { node?: unknown }) {
+  const follow = useContext(FragmentLinks);
+  const href = p.href;
+  if (!href?.startsWith("#")) return <a {...p} target="_blank" />;
+  return (
+    <a
+      {...p}
+      onClick={(e) => {
+        e.preventDefault();
+        follow?.(href);
+      }}
+    />
+  );
+}
+
 // These are component types, not callbacks: defining them inside Prose would remount every diagram
 // whenever its parent renders (opening the command palette, scrolling between sections, …).
 const components: Components = {
   img: ({ node: _node, ...props }) => <MarkdownImage {...props} />,
-  a: (p) => <a {...p} target="_blank" />,
+  a: Link,
   pre: ({ node, ...p }) => {
     const code = node?.children[0];
     const classes = code?.type === "element" ? code.properties.className : undefined;
