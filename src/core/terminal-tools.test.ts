@@ -13,7 +13,7 @@ import { openDatabase } from "./db.ts";
 const temp = realpathSync(mkdtempSync(join(os.tmpdir(), "coxswain-terminal-")));
 const home = mock.method(os, "homedir", () => temp);
 syncBuiltinESMExports();
-const { openWorktree, openedWorktree } = await import("./git.ts");
+const { addLocalRepository, openWorktree, openedWorktree } = await import("./git.ts");
 const { startControl, openTarget } = await import("./open-target.ts");
 const { writeCatalog } = await import("./terminal-tools.ts");
 const { addNote } = await import("./entries.ts");
@@ -217,13 +217,14 @@ test("a terminal session gets its branch's tools, reads the user's comments and 
   // A directory coxswain can't make a workspace of is refused on the socket, and the bridge passes that on.
   assert.match(await hello(sock, temp), /^error: .* isn't in a git repository/);
   git(repo, "checkout", "-q", "--detach");
-  assert.equal(await hello(sock, repo), `error: ${repo} has no branch checked out`);
+  const unchecked = `${repo} has no branch checked out. Call use_workspace with the branch or PR to review.`;
+  assert.equal(await hello(sock, repo), `error: ${unchecked}`);
   const detached = bridge(repo, userData);
   t.after(detached.close);
   assert.ok((await detached.names()).includes("read_review"));
   assert.deepEqual(await detached.call("read_review"), {
     isError: true,
-    text: `coxswain: ${repo} has no branch checked out`,
+    text: `coxswain: ${unchecked}`,
   });
 
   // No app: the tools are still listed, from the catalog, and a call says to start it.
@@ -237,4 +238,84 @@ test("a terminal session gets its branch's tools, reads the user's comments and 
     isError: true,
     text: "coxswain isn't running. Start it, then call the tool again.",
   });
+});
+
+test("a session in the main checkout picks the branch to review with use_workspace", async (t) => {
+  const repo = join(temp, "code/svc");
+  mkdirSync(repo, { recursive: true });
+  git(repo, "init", "-q", "-b", "main");
+  writeFileSync(join(repo, "b.ts"), "export const b = 1;\n");
+  git(repo, "add", ".");
+  git(repo, "commit", "-qm", "initial");
+  git(repo, "checkout", "-qb", "feature");
+  writeFileSync(join(repo, "b.ts"), "export const beta = 1;\n");
+  git(repo, "commit", "-qam", "rename");
+  git(repo, "checkout", "-q", "main");
+
+  const db = openDatabase(join(temp, "picked.db"));
+  t.after(() => db.destroy());
+  const userData = join(temp, "picked");
+  mkdirSync(userData);
+  const server = await startControl(db, userData);
+  assert.ok(server);
+  t.after(() => server.close());
+  await addLocalRepository(db, repo);
+  await writeCatalog(db, userData);
+  // git.ts remembers opened worktrees by workspace id for the whole process: keep clear of the first test's id 1.
+  git(repo, "branch", "spare");
+  await openTarget(db, { project: { path: repo }, branch: "spare" });
+
+  // The main checkout is on the branch workspaces start from: nothing to review, and the error says what to do.
+  const session = bridge(repo, userData);
+  t.after(session.close);
+  assert.ok((await session.names()).includes("use_workspace"));
+  const onMain = `coxswain: ${repo} is on main, the branch svc's workspaces start from, so it has no changes to review. Call use_workspace with the branch or PR to review, or start the session in that branch's worktree.`;
+  assert.deepEqual(await session.call("read_review"), { isError: true, text: onMain });
+  // A name given before there's a workspace is kept for the connection use_workspace opens.
+  const naming = await session.call("set_session_name", { name: "backend-dd" });
+  assert.equal(naming.isError, true);
+  assert.match(naming.text, /The name is kept/);
+
+  assert.match(
+    (await session.call("use_workspace", { branch: "feature", pr: 1 })).text,
+    /not both/,
+  );
+  const missing = await session.call("use_workspace", { branch: "nope" });
+  assert.equal(missing.isError, true);
+  assert.match(missing.text, /has no branch nope/);
+
+  const picked = await session.call("use_workspace", { branch: "feature" });
+  const workspace = await db
+    .selectFrom("workspaces")
+    .select("id")
+    .where("branch", "=", "feature")
+    .executeTakeFirstOrThrow();
+  const worktree = await openedWorktree(db, workspace.id);
+  assert.deepEqual(picked, {
+    isError: false,
+    text: `coxswain now works on svc: branch feature, its code in ${worktree}. Every coxswain tool uses this workspace until you call use_workspace again.`,
+  });
+  assert.equal((await session.call("read_review")).text, "No open thread waits on you.");
+  // The Guide's start names the workspace, for a session that moved since it started to check against.
+  assert.match(
+    (await session.call("start_guide")).text,
+    new RegExp(
+      `This Guide is for svc: branch feature, its code in ${worktree}\\. If you're reviewing`,
+    ),
+  );
+  assert.match((await session.call("list_changed_files")).text, /b\.ts/);
+  const finding = await session.call("add_finding", {
+    path: "b.ts",
+    side: "new",
+    start_line: 1,
+    end_line: 1,
+    body: "[G1-C1] beta",
+  });
+  assert.equal(finding.isError, false);
+  assert.doesNotMatch(finding.text, /set_session_name/);
+  assert.equal((await session.call("finish_guide")).isError, false);
+
+  // Going back to the main checkout's branch is refused like the first call, and the pick holds.
+  assert.deepEqual(await session.call("use_workspace"), { isError: true, text: onMain });
+  assert.equal((await session.call("read_review")).text, "No open thread waits on you.");
 });

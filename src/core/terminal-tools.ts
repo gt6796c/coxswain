@@ -7,7 +7,13 @@ import { promisify } from "node:util";
 import type { McpTool } from "./agents";
 import type { Db } from "./db";
 import { addEntry, liveEntries, type ReviewEntry } from "./entries.ts";
-import { currentMergeBase, openWorktree } from "./git.ts";
+import {
+  addLocalRepository,
+  currentMergeBase,
+  listBranches,
+  openedWorktree,
+  openWorktree,
+} from "./git.ts";
 import { openTarget } from "./open-target.ts";
 import { listProjects } from "./projects.ts";
 import { emit } from "./events.ts";
@@ -23,13 +29,18 @@ import { turnEnded, viewTools } from "./views.ts";
 
 const run = promisify(execFile);
 
-// The workspace for a directory on this machine: the branch checked out there, in the repository it belongs to (added
-// as a local repository if it's new), opened so its diff and threads are known.
+// A branch or PR the session picked with use_workspace, in place of the branch checked out where it runs.
+export type WorkspacePick = { branch: string } | { pr: number };
+
+// The workspace for a directory on this machine: the branch checked out there, or the one picked, in the repository it
+// belongs to (added as a local repository if it's new), opened so its diff and threads are known. The label names it
+// and the folder its code is in, which isn't the session's own when it picked one.
 // ponytail: a directory not on this machine (an agent on another host, through a forwarded socket) is refused; it
 // could name its repository's remote and branch instead.
 export async function terminalWorkspace(
   db: Db,
   cwd: string,
+  pick?: WorkspacePick,
 ): Promise<{ workspaceId: number; label: string }> {
   const git = (...args: string[]) =>
     run("git", args, { cwd }).then(
@@ -38,25 +49,54 @@ export async function terminalWorkspace(
     );
   const common = await git("rev-parse", "--path-format=absolute", "--git-common-dir");
   if (!common) throw new Error(`${cwd} isn't in a git repository on this machine`);
-  const branch = await git("symbolic-ref", "--short", "-q", "HEAD");
-  if (!branch) throw new Error(`${cwd} has no branch checked out`);
+  const path = dirname(common);
   const { project, workspace } = await openTarget(db, {
-    project: { path: dirname(common) },
-    branch,
+    project: { path },
+    ...(pick ?? { branch: await checkedOut(db, cwd, path, git) }),
   });
   if (currentMergeBase(workspace.id) === undefined) {
     const opened = await openWorktree(db, workspace.id);
     if (opened.status !== "ok")
       throw new Error("message" in opened ? opened.message : opened.status);
   }
-  return { workspaceId: workspace.id, label: `${project.name}: branch ${workspace.branch}` };
+  const what =
+    workspace.prNumber === null
+      ? `branch ${workspace.branch}`
+      : `PR #${workspace.prNumber}${workspace.branch ? ` (${workspace.branch})` : ""}`;
+  const code = await openedWorktree(db, workspace.id).catch(() => null);
+  return {
+    workspaceId: workspace.id,
+    label: `${project.name}: ${what}${code ? `, its code in ${code}` : ""}`,
+  };
+}
+
+// The branch checked out in the session's directory, unless it's the one the repository's workspaces start from (as in
+// its main checkout): that has no changes of its own to review, so the session is told to pick one.
+async function checkedOut(
+  db: Db,
+  cwd: string,
+  path: string,
+  git: (...args: string[]) => Promise<string | null>,
+): Promise<string> {
+  const branch = await git("symbolic-ref", "--short", "-q", "HEAD");
+  if (!branch)
+    throw new Error(
+      `${cwd} has no branch checked out. Call use_workspace with the branch or PR to review.`,
+    );
+  const project = await addLocalRepository(db, path);
+  const branches = await listBranches(db, project.id);
+  if (branches.status === "ok" && branches.defaultBranch === branch)
+    throw new Error(
+      `${cwd} is on ${branch}, the branch ${project.name}'s workspaces start from, so it has no changes to review. Call use_workspace with the branch or PR to review, or start the session in that branch's worktree.`,
+    );
+  return branch;
 }
 
 const closedTool = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 
 // The view tools, less publish_guide (only coxswain's own Guide updates call it), and what a session outside coxswain
-// needs besides: the user's comments, answering them, and saying when the Guide is done.
-export function terminalTools(db: Db, workspaceId: number): McpTool[] {
+// needs besides: the user's comments, answering them, and saying when the Guide is done. label is terminalWorkspace's.
+export function terminalTools(db: Db, workspaceId: number, label = ""): McpTool[] {
   const thread = async (id: number) => {
     const root = await db
       .selectFrom("entries")
@@ -70,24 +110,50 @@ export function terminalTools(db: Db, workspaceId: number): McpTool[] {
   };
   // The session's name, from set_session_name: replies on what it adds after that wait for it.
   let session: string | null = null;
-  const remembering = (t: McpTool): McpTool =>
-    t.name !== "add_finding" && t.name !== "add_explanation"
-      ? t
-      : {
-          ...t,
-          call: async (args) => {
-            const before = await lastEntryId(db);
-            const text = await t.call(args);
-            if (!session)
-              return `${text}\nReplies the user writes on it go to coxswain's agent. To have them wait for you in read_review, call set_session_name first.`;
-            await rememberThreads(db, workspaceId, before, session);
-            return text;
-          },
-        };
+  const adapted = (t: McpTool): McpTool =>
+    match(t.name)
+      .with("add_finding", "add_explanation", () => ({
+        ...t,
+        call: async (args: never) => {
+          const before = await lastEntryId(db);
+          const text = await t.call(args);
+          if (!session)
+            return `${text}\nReplies the user writes on it go to coxswain's agent. To have them wait for you in read_review, call set_session_name first.`;
+          await rememberThreads(db, workspaceId, before, session);
+          return text;
+        },
+      }))
+      // The session's directory is fixed when it starts, and a session that moved since works on where it started:
+      // the Guide's start says which workspace that is, so the session can check it's the one it reviews.
+      .with("start_guide", () => ({
+        ...t,
+        call: async (args: never) =>
+          `${await t.call(args)}\n\nThis Guide is for ${label}. If you're reviewing another branch or PR, call finish_guide, then use_workspace with that one, and start_guide again.`,
+      }))
+      .otherwise(() => t);
   return [
     ...viewTools(db, workspaceId)
       .filter((t) => t.name !== "publish_guide")
-      .map(remembering),
+      .map(adapted),
+    {
+      name: "use_workspace",
+      annotations: closedTool,
+      description:
+        "Pick the branch or PR to review when it isn't the branch checked out where you run, as in the main checkout. coxswain opens its workspace, and every coxswain tool works on it from then on. Its code is in the folder the answer names: read and run the code there. With neither branch nor pr, go back to the branch where you run.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          branch: { type: "string" },
+          pr: { type: "integer", description: "A PR number, in place of branch" },
+        },
+      },
+      // The bridge answers it (it keeps the pick for every connection); only an older bridge passes it on.
+      call: async () => {
+        throw new Error(
+          "This coxswain bridge is older than the app and can't pick a workspace. Start a new session.",
+        );
+      },
+    },
     {
       name: "set_session_name",
       annotations: closedTool,
@@ -318,8 +384,9 @@ export async function writeCatalog(db: Db, userData: string) {
   writeFileSync(join(userData, "terminal-tools.json"), `${JSON.stringify(catalog, null, 2)}\n`);
 }
 
-// A control socket connection that began "mcp {cwd}": answers "ready <workspace>" or "error: …", then one JSON-RPC
-// message per line each way. The client sends nothing more until it has the answer.
+// A control socket connection that began "mcp {cwd}", with the session's use_workspace pick as branch or pr: answers
+// "ready <workspace>" or "error: …", then one JSON-RPC message per line each way. The client sends nothing more until
+// it has the answer.
 export async function serveTerminal(
   db: Db,
   userData: string,
@@ -329,10 +396,15 @@ export async function serveTerminal(
 ) {
   let tools: McpTool[];
   try {
-    const { cwd } = JSON.parse(hello) as { cwd?: unknown };
-    if (typeof cwd !== "string") throw new Error('say where the session runs: mcp {"cwd": …}');
-    const { workspaceId, label } = await terminalWorkspace(db, cwd);
-    tools = terminalTools(db, workspaceId);
+    const said = JSON.parse(hello) as { cwd?: unknown; branch?: unknown; pr?: unknown };
+    if (typeof said.cwd !== "string") throw new Error('say where the session runs: mcp {"cwd": …}');
+    const pick = match(said)
+      .returnType<WorkspacePick | undefined>()
+      .with({ branch: P.string.select() }, (branch) => ({ branch }))
+      .with({ pr: P.number.select() }, (pr) => ({ pr }))
+      .otherwise(() => undefined);
+    const { workspaceId, label } = await terminalWorkspace(db, said.cwd, pick);
+    tools = terminalTools(db, workspaceId, label);
     await writeCatalog(db, userData).catch(() => {});
     socket.write(`ready ${label}\n`);
   } catch (e) {

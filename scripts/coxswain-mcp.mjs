@@ -3,7 +3,8 @@
 //   claude mcp add -s user coxswain -- node <this file>
 // It lists the tools from <userData>/terminal-tools.json, and only inside a repository coxswain has as a local
 // repository, so sessions elsewhere get none. The first tool call connects to <userData>/control.sock with the
-// session's directory; the app opens that branch's workspace and answers each call. No app running: the call says so.
+// session's directory; the app opens that branch's workspace, or the one use_workspace picked, and answers each call.
+// No app running: the call says so.
 import { execFileSync } from "node:child_process";
 import { readFileSync, realpathSync, watch } from "node:fs";
 import { connect } from "node:net";
@@ -45,17 +46,22 @@ function listed() {
   }
 }
 
-// One connection per session, opened by the first call and again after the app went away.
+// One connection per session, opened by the first call, again after the app went away, and by use_workspace.
 let connection = null;
 let nextId = 1;
+// use_workspace's pick, { branch } or { pr }, sent on every connection so it outlasts an app restart. Empty: the branch
+// checked out in cwd.
+let pick = {};
+// set_session_name's arguments, said again on each new connection: the app keeps the name per connection.
+let named = null;
 
 function open() {
-  return new Promise((resolve, reject) => {
+  const opening = new Promise((resolve, reject) => {
     const socket = connect(join(userData, "control.sock"));
     const pending = new Map();
     let ready = false;
     const fail = (error) => {
-      connection = null;
+      if (connection === opening) connection = null; // not one use_workspace opened since
       if (!ready) reject(error);
       for (const p of pending.values()) p.reject(error);
       pending.clear();
@@ -70,7 +76,7 @@ function open() {
     socket.on("close", () =>
       fail(new Error("coxswain closed the connection. Call the tool again.")),
     );
-    socket.on("connect", () => socket.write(`mcp ${JSON.stringify({ cwd })}\n`));
+    socket.on("connect", () => socket.write(`mcp ${JSON.stringify({ cwd, ...pick })}\n`));
     // readline repeats the socket's errors; the socket's own handler deals with them.
     const lines = createInterface({ input: socket }).on("error", () => {});
     lines.on("line", (line) => {
@@ -78,13 +84,56 @@ function open() {
         if (!line.startsWith("ready "))
           return fail(new Error(line.replace(/^error: /, "coxswain: ")));
         ready = true;
-        return resolve({ socket, pending });
+        if (named) {
+          const id = nextId++;
+          pending.set(id, { resolve: () => {}, reject: () => {} });
+          const params = { name: "set_session_name", arguments: named };
+          socket.write(`${JSON.stringify({ jsonrpc: "2.0", id, method: "tools/call", params })}\n`);
+        }
+        return resolve({ socket, pending, label: line.slice("ready ".length) });
       }
       const reply = JSON.parse(line);
       pending.get(reply.id)?.resolve(reply);
       pending.delete(reply.id);
     });
   });
+  return opening;
+}
+
+const answer = (id, text, isError = false) => ({
+  jsonrpc: "2.0",
+  id,
+  result: { isError, content: [{ type: "text", text }] },
+});
+
+// use_workspace: connect again with the new pick; if coxswain refuses it, the old pick stays.
+async function useWorkspace(message) {
+  const { branch, pr } = message.params?.arguments ?? {};
+  if (branch !== undefined && pr !== undefined)
+    return answer(message.id, "Give branch or pr, not both.", true);
+  if (branch !== undefined && (typeof branch !== "string" || !branch.trim()))
+    return answer(message.id, "branch must be a branch name.", true);
+  if (pr !== undefined && !Number.isInteger(pr))
+    return answer(message.id, "pr must be a PR number.", true);
+  const before = pick;
+  const old = connection;
+  pick = branch !== undefined ? { branch: branch.trim() } : pr !== undefined ? { pr } : {};
+  try {
+    connection = open();
+    const { label } = await connection;
+    old?.then(
+      ({ socket }) => socket.destroy(),
+      () => {},
+    );
+    return answer(
+      message.id,
+      `coxswain now works on ${label}. Every coxswain tool uses this workspace until you call use_workspace again.`,
+    );
+  } catch (e) {
+    pick = before;
+    connection = old;
+    return answer(message.id, e.message, true);
+  }
 }
 
 async function call(message) {
@@ -96,13 +145,20 @@ async function call(message) {
       pending.set(id, { resolve, reject });
       socket.write(`${JSON.stringify({ ...message, id })}\n`);
     });
+    if (message.params?.name === "set_session_name" && !reply.result?.isError)
+      named = message.params.arguments;
     return { ...reply, id: message.id };
   } catch (e) {
-    return {
-      jsonrpc: "2.0",
-      id: message.id,
-      result: { isError: true, content: [{ type: "text", text: e.message }] },
-    };
+    // No connection: the name is kept for the next one, which use_workspace may open.
+    const name = message.params?.arguments?.name;
+    if (message.params?.name !== "set_session_name" || typeof name !== "string" || !name.trim())
+      return answer(message.id, e.message, true);
+    named = message.params.arguments;
+    return answer(
+      message.id,
+      `${e.message}\nThe name is kept: coxswain gets it once it connects.`,
+      true,
+    );
   }
 }
 
@@ -143,7 +199,9 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
       return result({ tools });
     }
     case "tools/call":
-      return send(await call(message));
+      return send(
+        await (message.params?.name === "use_workspace" ? useWorkspace(message) : call(message)),
+      );
     default:
       return send({
         jsonrpc: "2.0",
