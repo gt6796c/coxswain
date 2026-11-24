@@ -56,6 +56,12 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   message): five growths in a row at the end stay at the end; scrolled up 400 px, new content moves the reader 0 px and
   shows _Latest_; _Latest_ returns to the end and following resumes.
 - No core or storage changes.
+## 2026-11-21 — Remove Workspace with native tabs
+
+- The native workspace tabs (macOS 26 glass) have no context menu, and the bar's `remove-workspace` press had no button
+  sending it, so a workspace could not be removed there. _File ▸ Remove Workspace…_ is a new action (`remove-workspace`)
+  for the current workspace, so it is also in the command palette; the HTML tabs keep their right-click menu. The dead
+  press case is gone.
 
 ## 2026-11-07 — Release v1.10.3
 

@@ -1275,6 +1275,15 @@ export function App() {
         else if (currentWorkspace) closeWorkspaceTab(currentWorkspace);
       },
     },
+    // The way to it with native tabs, which have no context menu; the HTML tabs also offer it on right-click.
+    {
+      id: "remove-workspace",
+      title: "Remove Workspace…",
+      enabled: onMain && !!currentWorkspace,
+      run: () => {
+        if (currentWorkspace) void removeWorkspace(currentWorkspace);
+      },
+    },
     ...Array.from({ length: 9 }, (_, i): Action => {
       const w = i === 8 ? openWorkspaces.at(-1) : openWorkspaces[i];
       return {

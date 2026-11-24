@@ -173,7 +173,8 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   widths no longer fit, the strip scrolls horizontally without a visible scrollbar; the selected tab is
   brought into view. Each shows its PR title (number or branch while offline), PR number, PR/branch icon and agent
   status dot (amber: waiting on permission, pulsing blue: working, green: done). The branch and full title are in
-  the tooltip. Left/Right and Home/End switch tabs from the keyboard. Right-click offers _Remove Workspace…_,
+  the tooltip. Left/Right and Home/End switch tabs from the keyboard. _File ▸ Remove Workspace…_ (also in the
+  command palette, and on right-click of the HTML tabs; the native tabs have no context menu) removes the current one,
   with the existing confirmation: comments, reviewed files and sessions are deleted, the worktree stays on disk.
   There is no workspace sidebar. New workspace (+), the chat toggle and Settings stay visible after the tabs.
   The rest of the screen belongs to the current project. _Add Project…_ opens the _Open a project_ dialog with
