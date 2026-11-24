@@ -151,7 +151,10 @@ const resolveHere = async (db: Db, id: number, resolved: boolean) =>
   changedIn(
     await db
       .updateTable("entries")
-      .set({ resolved_at: resolved ? new Date().toISOString() : null })
+      .set({
+        resolved_at: resolved ? new Date().toISOString() : null,
+        ...(!resolved && { resolution_summary: null }),
+      })
       .where("id", "=", id)
       .returning("workspace_id")
       .executeTakeFirst(),
