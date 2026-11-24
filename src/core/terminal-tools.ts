@@ -97,6 +97,41 @@ async function checkedOut(
   return branch;
 }
 
+// As Remove Workspace in the sidebar: the workspace goes with its review, and its pane sessions end with it. Tests can't
+// load agents.ts.
+async function dropWorkspace(db: Db, workspaceId: number) {
+  const agents = await import("./agents.ts").catch(() => null);
+  await agents?.closeWorkspaceSessions(db, workspaceId);
+  await removeWorkspace(db, workspaceId);
+}
+
+// A control socket connection that began "remove {repo, branch}", from a script that removed the user's worktree of
+// that branch (a WorktreeRemove hook): the repository's workspaces on the branch go, PRs' included. Nothing is opened
+// or added, so the window stays where it is. Answers "removed N" or "error: …".
+export async function removeBranch(db: Db, said: string): Promise<string> {
+  const { repo, branch } = JSON.parse(said) as { repo?: unknown; branch?: unknown };
+  if (typeof repo !== "string" || typeof branch !== "string" || !branch)
+    throw new Error('say which: remove {"repo": …, "branch": …}');
+  const real = await realpath(repo).catch(() => repo);
+  const projects = await listProjects(db);
+  const project = (
+    await Promise.all(
+      projects.map(async (p) =>
+        p.path && (await realpath(p.path).catch(() => p.path)) === real ? p : null,
+      ),
+    )
+  ).find((p) => p !== null);
+  if (!project) return "removed 0";
+  const workspaces = await db
+    .selectFrom("workspaces")
+    .select("id")
+    .where("project_id", "=", project.id)
+    .where("branch", "=", branch)
+    .execute();
+  for (const { id } of workspaces) await dropWorkspace(db, id);
+  return `removed ${workspaces.length}`;
+}
+
 const closedTool = { readOnlyHint: false, destructiveHint: false, openWorldHint: false };
 
 // The view tools, less publish_guide (only coxswain's own Guide updates call it), and what a session outside coxswain
@@ -289,10 +324,7 @@ export function terminalTools(db: Db, workspaceId: number, label = ""): McpTool[
         "Remove the workspace you work on from coxswain, with its Guide and review threads, once its work is over (merged or dropped). Call it before you remove its worktree or delete its branch, so coxswain doesn't keep a workspace whose code is gone; afterwards coxswain can't find the workspace from your directory. The worktree and the branch stay: remove them yourself.",
       inputSchema: { type: "object", properties: {} },
       call: async () => {
-        // As Remove Workspace in the sidebar: its pane sessions end with it. Tests can't load agents.ts.
-        const agents = await import("./agents.ts").catch(() => null);
-        await agents?.closeWorkspaceSessions(db, workspaceId);
-        await removeWorkspace(db, workspaceId);
+        await dropWorkspace(db, workspaceId);
         return `coxswain removed the workspace (${label}), with its Guide and review threads. Its worktree and branch are still there. Your next coxswain call works on the branch where you run, or on what use_workspace picks.`;
       },
     },

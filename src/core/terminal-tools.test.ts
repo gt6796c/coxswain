@@ -67,15 +67,16 @@ function bridge(cwd: string, userData: string, sessionId = "") {
   return { rpc, names, call, close: () => child.kill() };
 }
 
-const hello = (sock: string, cwd: string) =>
+const say = (sock: string, line: string) =>
   new Promise<string>((done, fail) => {
-    const socket = connect(sock, () => socket.write(`mcp ${JSON.stringify({ cwd })}\n`));
+    const socket = connect(sock, () => socket.write(`${line}\n`));
     createInterface({ input: socket }).once("line", (line) => {
       socket.destroy();
       done(line);
     });
     socket.on("error", fail);
   });
+const hello = (sock: string, cwd: string) => say(sock, `mcp ${JSON.stringify({ cwd })}`);
 
 test("a terminal session gets its branch's tools, reads the user's comments and answers them", async (t) => {
   const repo = join(temp, "code/app");
@@ -376,4 +377,20 @@ test("a session in the main checkout picks the branch to review with use_workspa
   const later = bridge(repo, userData, "session-dd");
   t.after(later.close);
   assert.deepEqual(await later.call("read_review"), { isError: true, text: onMain });
+
+  // A hook that removed the user's worktree of a branch removes its workspaces, without opening anything.
+  assert.equal((await later.call("use_workspace", { branch: "feature" })).isError, false);
+  const sock = join(userData, "control.sock");
+  const remove = (said: object) => say(sock, `remove ${JSON.stringify(said)}`);
+  assert.equal(await remove({ repo: temp, branch: "feature" }), "removed 0");
+  assert.equal(await remove({ repo: repo, branch: "feature" }), "removed 1");
+  assert.equal(
+    await db
+      .selectFrom("workspaces")
+      .select("id")
+      .where("branch", "=", "feature")
+      .executeTakeFirst(),
+    undefined,
+  );
+  assert.match(await remove({ repo }), /^error: say which/);
 });

@@ -106,6 +106,13 @@ export async function startControl(db: Db, userData: string): Promise<Server | n
           t.serveTerminal(db, userData, socket, lines, line.slice(4)),
         );
       lines.close();
+      if (line.startsWith("remove "))
+        return void import("./terminal-tools.ts")
+          .then((t) => t.removeBranch(db, line.slice(7)))
+          .then(
+            (removed) => socket.end(`${removed}\n`),
+            (e: Error) => socket.end(`error: ${e.message}\n`),
+          );
       void openText(db, line).then(
         (opened) => socket.end(`opened ${opened}\n`),
         (e: Error) => socket.end(`error: ${e.message}\n`),
