@@ -84,6 +84,13 @@ available for review artifacts. Claude sessions disable the native Edit, Write a
     running turn instead of cancelling it. With `idleBehavior: "promptRequired"` Claude Code hands it back if the turn
     had just ended, and it runs next; Codex ignores that and starts a turn of its own, which the chat shows like any
     turn the agent starts.
+14. **The pane's sessions run in the agent folder.** `COXSWAIN_AGENT_FOLDER` names a folder of the checkout, such as
+    a monorepo's `backend/` with its own `CLAUDE.md`, `AGENTS.md` and `.claude/`; the pane's sessions (those given
+    coxswain's tools) get it as `cwd` in `session/new`, `session/resume` and `session/load`, so the agent loads that
+    folder's instructions, skills and settings. The checkout goes in ACP's `additionalDirectories`, so the rest of the
+    repository is readable without prompts, and Claude Code's pane instructions say where the root is: coxswain's
+    tools still take repository-relative paths. Unset, outside the checkout or missing from it: the checkout.
+    Background jobs, git, language servers and snapshots always use the checkout.
 
 ## Alternatives considered
 
@@ -106,5 +113,8 @@ available for review artifacts. Claude sessions disable the native Edit, Write a
 - A long-lived adapter process to keep, restart and stop. In return, turns skip Claude Code's start-up after the
   first.
 - A model set in the user's Claude Code settings is ignored until the user picks one in coxswain.
+- The agent folder is one per run, from the environment: another folder means restarting coxswain, and a session
+  started before keeps the folder it was made in only if the run's folder is the same. Codex gets its instructions
+  once per adapter process, so it isn't told where the root is; it does get the `cwd` and the extra directory.
 
 Guide generation and automatic refresh use the workspace’s normal durable Guide session. Creation and turns can leave the selected Chat session unchanged; Guide updates leave visibility and selection unchanged; View session explicitly opens/selects Guide. Permission callbacks may leave a request pending for answerPermission through the session projection. Per-turn Guide picks are strict and restore the preceding session configuration after completion, without changing composer preferences.
