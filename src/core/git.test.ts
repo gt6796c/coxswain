@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
-import { asText, gitHubOf, parseLog } from "./git.ts";
+import { asText, gitHubOf, gitHubOfRemote, parseLog } from "./git.ts";
 
 test("images become data URLs, other binary files don't, text stays text", () => {
   const png = asText(Buffer.from([0x89, 0x50, 0, 1]), "logo.PNG");
@@ -54,4 +57,31 @@ test("gitHubOf reads owner/name from github.com remotes only", () => {
   assert.equal(gitHubOf("git@gitlab.com:acme/widgets.git"), null);
   assert.equal(gitHubOf("https://github.com.evil.example/acme/widgets"), null);
   assert.equal(gitHubOf(""), null);
+});
+
+test("gitHubOfRemote follows an SSH host alias to github.com", async (t) => {
+  const dir = mkdtempSync(join(tmpdir(), "coxswain-ssh-"));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const config = join(dir, "config");
+  writeFileSync(
+    config,
+    "Host work-github\n  HostName github.com\nHost work-gitlab\n  HostName gitlab.com\n",
+  );
+  const ssh = ["-F", config];
+  assert.equal(await gitHubOfRemote("git@github.com:acme/widgets.git", ssh), "acme/widgets");
+  for (const url of [
+    "ssh://git@work-github/acme/widgets",
+    "ssh://git@work-github:22/acme/widgets.git",
+    "git@work-github:acme/widgets.git",
+    "work-github:acme/widgets",
+  ])
+    assert.equal(await gitHubOfRemote(url, ssh), "acme/widgets", url);
+  for (const url of [
+    "git@work-gitlab:acme/widgets.git",
+    "ssh://git@-oVisualHostKey/acme/widgets",
+    "https://work-github/acme/widgets",
+    "/srv/git/widgets.git",
+    "",
+  ])
+    assert.equal(await gitHubOfRemote(url, ssh), null, url);
 });
