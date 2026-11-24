@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { writeFileSync } from "node:fs";
+import { realpath } from "node:fs/promises";
 import type { Socket } from "node:net";
 import { dirname, join } from "node:path";
 import type { Interface } from "node:readline";
@@ -63,7 +64,10 @@ export async function terminalWorkspace(
     workspace.prNumber === null
       ? `branch ${workspace.branch}`
       : `PR #${workspace.prNumber}${workspace.branch ? ` (${workspace.branch})` : ""}`;
-  const code = await openedWorktree(db, workspace.id).catch(() => null);
+  // The real path: an adopted worktree (ADR 0046) is a link in coxswain's folder to the user's own.
+  const code = await openedWorktree(db, workspace.id)
+    .then((path) => realpath(path))
+    .catch(() => null);
   return {
     workspaceId: workspace.id,
     label: `${project.name}: ${what}${code ? `, its code in ${code}` : ""}`,
