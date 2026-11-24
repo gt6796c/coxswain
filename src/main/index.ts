@@ -399,6 +399,11 @@ const menu = Menu.buildFromTemplate([
         accelerator: "CmdOrCtrl+B",
         click: () => runAction("toggle-navigator"),
       },
+      {
+        label: "Toggle Section Description",
+        accelerator: "CmdOrCtrl+I",
+        click: () => runAction("toggle-section-description"),
+      },
       { type: "separator" },
       {
         id: "back",
@@ -924,6 +929,12 @@ app.whenReady().then(async () => {
                 type: "radio",
                 checked: descriptionPosition === "above",
                 click: () => result.pick({ kind: "description-position", position: "above" }),
+              },
+              {
+                label: "On Demand",
+                type: "radio",
+                checked: descriptionPosition === "on-demand",
+                click: () => result.pick({ kind: "description-position", position: "on-demand" }),
               },
             ],
           },

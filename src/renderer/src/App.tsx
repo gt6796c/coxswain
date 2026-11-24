@@ -10,6 +10,8 @@ import { useUiPreferences } from "./ui-preferences";
 import { setAgentPane } from "./agent-pane";
 import { fileCountLabel } from "./remaining-files";
 import { createGuideReadingPosition } from "./guide-reading-position";
+import { createDescriptionPeek } from "./description-peek";
+import { DescriptionButton, DescriptionPeek, revealInPeek } from "./DescriptionPeek";
 import { orderChanges } from "./changes-order";
 import { Virtualizer } from "@pierre/diffs/react";
 import { match, P } from "ts-pattern";
@@ -142,6 +144,10 @@ export function App() {
   const [guideDescriptionPosition, setGuideDescriptionPosition] = preference(
     "guideDescriptionPosition",
   );
+  // On Demand: a section with files keeps only its heading on the canvas; its description is in DescriptionPeek.
+  const [descriptionPeek] = useState(createDescriptionPeek);
+  const onDemand = (x?: { files: unknown[] }) =>
+    guideDescriptionPosition === "on-demand" && !!x?.files.length;
   const [historyHeight, setHistoryHeight] = preference("historyHeight");
   const [guideOptions, setGuideOptions] = preference("guideOptions");
   useEffect(() => {
@@ -1115,6 +1121,12 @@ export function App() {
   useEffect(() => {
     if (positionWasRestored()) return;
     if (!s.thread || !threadIn || !canvasReady || !canvas.current) return;
+    if (
+      s.at === undefined &&
+      typeof threadSection === "number" &&
+      onDemand(sections?.[threadSection])
+    )
+      return revealInPeek(canvas.current, descriptionPeek, threadSection);
     return scrollToThread(canvas.current, threadIn, s.thread);
   }, [location.state.__TSR_key, s.thread, threadIn, canvasReady, threadPicks]);
   useEffect(() => {
@@ -1260,9 +1272,15 @@ export function App() {
       run: () => setViewSettings((v) => ({ ...v, layout })),
     })),
     toggleSetting("group-changes", "Group Changes", groupChanges, setGroupChanges),
-    ...(["beside", "above"] as const).map((position) => ({
+    ...(
+      [
+        ["beside", "Beside Files"],
+        ["above", "Above Files"],
+        ["on-demand", "On Demand"],
+      ] as const
+    ).map(([position, name]) => ({
       id: `setting:description-position:${position}`,
-      title: `Section Descriptions ${position === "beside" ? "Beside" : "Above"} Files`,
+      title: `Section Descriptions ${name}`,
       enabled: guideDescriptionPosition !== position,
       run: () => setGuideDescriptionPosition(position),
     })),
@@ -1390,6 +1408,19 @@ export function App() {
       shortcut: "⌥⌘→",
       enabled: canForward,
       run: () => router.history.forward(),
+    },
+    {
+      id: "toggle-section-description",
+      title: "Show or Hide the Section Description",
+      shortcut: "⌘I",
+      // Not onMain, which leaves it out of the palette while the palette is open.
+      enabled:
+        screen === "main" &&
+        !search.settings &&
+        !s.pr &&
+        view === "sections" &&
+        !!sections?.some(onDemand),
+      run: () => descriptionPeek.toggle(),
     },
     {
       id: "toggle-navigator",
@@ -2060,7 +2091,7 @@ export function App() {
                                         canPost={currentWorkspace.prNumber !== null}
                                         viewId={canvasView?.id ?? 0}
                                         section={i}
-                                        entries={entries}
+                                        entries={onDemand(x) ? [] : entries}
                                         turns={turns}
                                         onAsk={ask}
                                         onAnswerPermission={answerPermission}
@@ -2094,10 +2125,21 @@ export function App() {
                                                 reviewed={x.files.filter(isReviewed).length}
                                                 writing={!!canvasView?.writing}
                                                 onReviewedChange={(on) => markSection(x.files, on)}
-                                              />
+                                              >
+                                                {onDemand(x) &&
+                                                  (x.parts as SectionPart[]).some(
+                                                    (p) => p.kind === "prose",
+                                                  ) && (
+                                                    <DescriptionButton
+                                                      peek={descriptionPeek}
+                                                      section={i}
+                                                    />
+                                                  )}
+                                              </ViewSectionHeader>
                                               {(x.parts as SectionPart[]).map(
                                                 (p, j) =>
-                                                  p.kind === "prose" && (
+                                                  p.kind === "prose" &&
+                                                  !onDemand(x) && (
                                                     <ViewProse key={j} part={j}>
                                                       {p.text}
                                                     </ViewProse>
@@ -2148,6 +2190,30 @@ export function App() {
                       </div>
                     </RetainedCanvas>
                   </PreserveReviewScroll>
+                )}
+                {!s.pr && view === "sections" && canvasView && sections?.some(onDemand) && (
+                  <DescriptionPeek
+                    peek={descriptionPeek}
+                    readingPosition={readingPosition}
+                    viewId={canvasView.id}
+                    total={canvasView.sections.length}
+                    writing={!!canvasView.writing}
+                    sections={sections}
+                    threads={{
+                      revealThread: s.thread,
+                      revealVersion: threadPicks,
+                      onThreadResolved: (id) => {
+                        if (shown.current.thread === id) void show({ thread: undefined });
+                      },
+                      workspaceId: currentWorkspace.id,
+                      canPost: currentWorkspace.prNumber !== null,
+                      entries,
+                      turns,
+                      onAsk: ask,
+                      onAnswerPermission: answerPermission,
+                      onLink: followGuideLink,
+                    }}
+                  />
                 )}
                 <FloatingReviewButton
                   disabled={!canSubmitReview}
