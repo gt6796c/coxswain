@@ -2195,7 +2195,7 @@ function GuideStaleNotice({ workspaceId, requested }: { workspaceId: number; req
     <div data-stale-guide-banner className="shrink-0 pt-[var(--ui-toolbar-height)]">
       <StaleGuideBanner
         requested={requested}
-        running={run?.state === "running"}
+        running={run?.state === "running" && !run.check}
         automatic={automatic.data !== false}
         onRefresh={() => window.coxswain.regenerateGuide(workspaceId)}
         onEnableAutomatic={() => window.coxswain.setAutoUpdate(workspaceId, true)}
@@ -2224,7 +2224,9 @@ function WritingViewNotice() {
 function GuideProgress({ workspaceId, hasGuide }: { workspaceId: number; hasGuide: boolean }) {
   const job = useQuery(core("getGuideRun", workspaceId)).data;
   if (!job || (job.state !== "running" && job.state !== "failed")) return null;
-  const label = match({ state: job.state, hasGuide })
+  const label = match({ state: job.state, hasGuide, check: job.check === true })
+    .with({ state: "running", check: true }, () => "Checking review threads against the changes…")
+    .with({ state: "failed", check: true }, () => "Thread check failed")
     .with({ state: "running", hasGuide: true }, () => "Updating guide…")
     .with({ state: "running", hasGuide: false }, () => "Generating guide…")
     .with({ state: "failed" }, () => "Guide update failed")
@@ -2251,9 +2253,14 @@ function GuideProgress({ workspaceId, hasGuide }: { workspaceId: number; hasGuid
           <span className="min-w-0 flex-1 truncate" title={job.error ?? undefined}>
             {job.error}
           </span>
-          <Button variant="link" onClick={() => void window.coxswain.regenerateGuide(workspaceId)}>
-            Retry
-          </Button>
+          {!job.check && (
+            <Button
+              variant="link"
+              onClick={() => void window.coxswain.regenerateGuide(workspaceId)}
+            >
+              Retry
+            </Button>
+          )}
         </>
       )}
     </div>

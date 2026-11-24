@@ -363,16 +363,24 @@ test("automatic Guide updates wait while an agent turn writes the Guide", async 
   const worktree = await openedWorktree(db, 1);
   writeFileSync(join(worktree, "a.ts"), "export const value = 2;\n");
   let turns = 0;
+  const checks: string[] = [];
+  let finding: number | undefined;
   setGuideSessionDriver({
     create: async () => ({ agentSessionId: "guide-session", agent: "claude" }),
     run: async (database, _session, prompt, _settings, onStart) => {
       onStart();
-      turns++;
+      const check = prompt.startsWith("Check the workspace's open review threads");
+      if (check) checks.push(prompt);
+      else turns++;
       await viewTools(database, 1)
         .find((tool) => tool.name === "publish_guide")!
         .call({
           request_id: /request_id=([^,]+)/.exec(prompt)![1],
-          sections: [{ title: "Behavior", body: "Changes the value.", files: ["a.ts"] }],
+          sections: check
+            ? []
+            : [{ title: "Behavior", body: "Changes the value.", files: ["a.ts"] }],
+          resolutions:
+            check && finding ? [{ thread_id: finding, summary: "The value is 3 now." }] : [],
         } as never);
       return { status: "ok" };
     },
@@ -389,19 +397,50 @@ test("automatic Guide updates wait while an agent turn writes the Guide", async 
   assert.equal(guideWorkPending(1), false);
   assert.equal(turns, 0, "an automatic update leaves the Guide being written alone");
   await call("write_section", { markdown: "## Review\nOne finding.\n```diff path=a.ts\n```" });
+  await call("add_finding", {
+    path: "a.ts",
+    side: "new",
+    start_line: 1,
+    end_line: 1,
+    body: "[G1-C1] 2 is the wrong value",
+  });
+  finding = (
+    await db
+      .selectFrom("entries")
+      .select("id")
+      .where("kind", "=", "finding")
+      .executeTakeFirstOrThrow()
+  ).id;
   turnEnded(1);
   await ensureGuide(db, 1);
   assert.equal(guideWorkPending(1), false);
-  assert.equal(turns, 0, "the finished Guide is current, so nothing replaces it");
+  assert.equal(turns + checks.length, 0, "the finished Guide is current, so nothing runs");
   assert.equal((await listViews(db, 1))[0].sections.length, 1);
 
-  // The review is a requested Guide: a change marks it out of date but leaves it; Update Guide replaces it.
+  // The review is a requested Guide: a change leaves its sections, and only checks its threads against the change.
   assert.equal((await listViews(db, 1))[0].requested, true);
   writeFileSync(join(worktree, "a.ts"), "export const value = 3;\n");
   await ensureGuide(db, 1);
-  assert.equal(guideWorkPending(1), false);
-  assert.equal(turns, 0, "a change leaves the requested Guide alone");
-  assert.equal((await listViews(db, 1))[0].sections[0].title, "Review");
+  await idle(db);
+  assert.equal(turns, 0, "a change leaves the requested Guide's sections alone");
+  assert.equal(checks.length, 1);
+  assert.match(checks[0], /writes no sections/);
+  assert.match(checks[0], /2 is the wrong value/);
+  assert.equal((await getGuideRun(db, 1))?.check, true);
+  const [kept] = await listViews(db, 1);
+  assert.equal(kept.sections[0].title, "Review");
+  assert.equal(kept.requested, true);
+  const resolved = await db
+    .selectFrom("entries")
+    .select(["resolved_at", "resolution_summary"])
+    .where("id", "=", finding)
+    .executeTakeFirstOrThrow();
+  assert.ok(resolved.resolved_at);
+  assert.equal(resolved.resolution_summary, "The value is 3 now.");
+  // Once per range: checked already, so the next event runs nothing.
+  await ensureGuide(db, 1);
+  await idle(db);
+  assert.equal(checks.length, 1);
   await ensureGuide(db, 1, true);
   await idle(db);
   assert.equal(turns, 1);

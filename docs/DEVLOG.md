@@ -3,6 +3,10 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-11-24 — A requested Guide's threads are checked when the code moves on
+
+- A requested Guide (a review) is kept when the code changes, so it missed the thread check an automatic update now does, and a review's findings stayed open after the fix landed. In place of the update, the Guide session now only checks the open threads against the new range and resolves the fixed ones (`publish_guide` with no sections), leaving the review's sections as written. Once per range, and only with a thread open. The progress line says "Checking review threads…", the out-of-date banner keeps Refresh Guide available, and a failed check offers no Retry, which would replace the review. ADR 0023.
+
 ## 2026-11-21 — Automatic Guide updates leave a requested Guide alone; the Guide keeps its scope
 
 - A requested review (or any agent pane turn writing the Guide) starts with `start_guide`, which empties the Guide until its sections come. An automatic update, set off meanwhile by a window focus or a settings change, saw an empty Guide as stale and replaced the review with a plain reading guide, and held the update lock so the review's own writes were refused. Automatic updates now skip a Guide that is being written; the next change or focus after the turn checks again. Update Guide still goes ahead.
@@ -23,6 +27,7 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - `read_guide` takes a section number and returns that section's markdown as written (ADR 0023). An agent asked
   to change one section, say to add these links to a summary, can now read it back instead of rewriting it from
   memory or reading coxswain's database.
+
 ## 2026-11-23 — Release v1.11.0
 
 - Includes verified thread resolutions during Guide updates, complete collapsed summaries with diff-matched colors, and PR creator labels in workspace tabs.
