@@ -687,7 +687,7 @@ Code theme families always contain light and dark variants. Code views and the S
 preview explicitly follow the resolved app appearance, including OS changes in System
 mode; Soft Dark uses the dark variant. Changing appearance preserves the theme family.
 
-Chat opens a session at its latest message once its history loads. Submitting messages, streaming answers and turn-status updates preserve the transcript scroll position, including when it was at the bottom; the reader scrolls to follow new content.
+Chat opens a session at its latest message once its history loads. While the reader is at the end of the transcript, new content (sent messages, streaming answers, turn-status updates) and a taller composer scroll it along. Once they scroll up, nothing moves them: a _Latest_ button (↓) floats over the bottom of the transcript to show there is more below, and jumps to the end. Scrolling back to the end, by hand or with _Latest_, follows again.
 
 Display settings persist app-wide in SQLite across restarts: Unified/Split, Tree/List, Hide Reviewed Files, Section Descriptions, change grouping, sidebar thread/author filters, sidebar visibility and width, Chat width, and Commits/Turns selection, visibility and height. Existing appearance, code theme, agent/model/effort, Guide and review settings retain their saved behavior. Defaults apply until a preference is first changed.
 
