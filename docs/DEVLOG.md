@@ -17,6 +17,17 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - PR workspace tabs now show the creator’s @login beside the PR number, in both native and fallback controls. The existing batched metadata query includes authors; the PR overview explicitly labels “Created by”. Missing authors retain the normal number/title fallback.
 
 - Validation: all 129 tests, typecheck, lint, formatting and production build pass. The disposable running-app check passes for creator labels, light/dark green thread surfaces, summaries, expansion and reopening.
+## 2026-11-20 — Go to Definition and Find Usages for Go
+
+- Go files get Go to Definition and Find Usages through gopls, as installed (PATH, then `go env GOBIN`/`GOPATH`'s
+  `bin`), on both sides of a file diff. A module in a subfolder (`backend/go.mod`) is found by gopls itself. ADR 0034.
+- gopls doesn't watch files, so a server in the worktree is told, before each lookup, the files that differ between
+  the snapshot it last saw and the current one, and open documents among them are closed. Previously an edit or a
+  pull left it answering at stale lines, and a new file wasn't found. ADR 0034 decision 6.
+- CI installs Go and gopls for the Go tests.
+- Tech debt: definitions in the standard library or module cache are outside the checkout and not listed (the same
+  limit as a linked `node_modules`).
+- Validation: all 130 tests, typecheck, lint, formatting and production build pass.
 
 ## 2026-11-07 — Release v1.10.3
 
