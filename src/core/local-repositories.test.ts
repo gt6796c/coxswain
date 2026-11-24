@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readlinkSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import os from "node:os";
 import { join } from "node:path";
@@ -11,9 +20,15 @@ import { openDatabase } from "./db.ts";
 const temp = realpathSync(mkdtempSync(join(os.tmpdir(), "coxswain-local-")));
 const home = mock.method(os, "homedir", () => temp);
 syncBuiltinESMExports();
-const { addLocalRepository, createRepository, listBranches, openWorktree } =
-  await import("./git.ts");
-const { openBranchWorkspace } = await import("./workspaces.ts");
+const {
+  addLocalRepository,
+  checkoutAt,
+  createRepository,
+  listBranches,
+  openWorktree,
+  worktreePath,
+} = await import("./git.ts");
+const { getAutoUpdate, openBranchWorkspace } = await import("./workspaces.ts");
 home.mock.restore();
 syncBuiltinESMExports();
 const identity = {
@@ -129,4 +144,46 @@ test("the user's own worktrees are never moved or pruned", async (t) => {
   assert.ok(listed.includes(`worktree ${away}`), "the user's missing worktree is still registered");
   assert.equal(listed.split(`worktree ${ours}`).length, 2, "ours is registered once, made again");
   assert.ok(existsSync(join(ours, ".git")));
+});
+
+test("with COXSWAIN_ADOPT_WORKTREES, a branch in one of the user's worktrees is reviewed there", async (t) => {
+  const db = openDatabase(join(temp, "adopt.db"));
+  t.after(() => db.destroy());
+  const repo = join(temp, "code/shop");
+  mkdirSync(repo, { recursive: true });
+  git(repo, "init", "-q", "-b", "main");
+  git(repo, "commit", "-q", "--allow-empty", "-m", "initial");
+  const theirs = join(temp, "elsewhere/shop-fix");
+  git(repo, "worktree", "add", "-q", "-b", "fix", theirs);
+  writeFileSync(join(theirs, "work.ts"), "uncommitted\n");
+  const project = await addLocalRepository(db, repo);
+  const w = await openBranchWorkspace(db, project.id, "fix", "main");
+  const path = worktreePath(project, { prNumber: null, branch: "fix" });
+
+  // Off unless asked for: refused, as without it.
+  assert.equal((await openWorktree(db, w.id)).status, "git-error");
+
+  // Adopted as it is, wherever it is: coxswain's path links to it, and coxswain never updates it.
+  process.env.COXSWAIN_ADOPT_WORKTREES = "1";
+  t.after(() => delete process.env.COXSWAIN_ADOPT_WORKTREES);
+  assert.equal((await openWorktree(db, w.id)).status, "ok");
+  assert.equal(readlinkSync(path), theirs);
+  assert.ok(existsSync(join(theirs, "work.ts")));
+  assert.equal(await getAutoUpdate(db, w.id), false);
+  assert.equal((await checkoutAt(db, w.id, null)).path, theirs);
+
+  // The user checks out another branch there: the link goes, and the workspace gets a worktree of coxswain's.
+  git(theirs, "switch", "-q", "-c", "other");
+  assert.equal((await openWorktree(db, w.id)).status, "ok");
+  assert.ok(!lstatSync(path).isSymbolicLink());
+  assert.deepEqual(
+    [git(path, "branch", "--show-current"), git(theirs, "branch", "--show-current")],
+    ["fix", "other"],
+  );
+
+  // The user's own checkout of the repository is never adopted.
+  git(repo, "switch", "-q", "-c", "wip");
+  const onWip = await openBranchWorkspace(db, project.id, "wip", "main");
+  assert.equal((await openWorktree(db, onWip.id)).status, "git-error");
+  assert.ok(!existsSync(worktreePath(project, { prNumber: null, branch: "wip" })));
 });

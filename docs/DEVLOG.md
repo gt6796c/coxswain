@@ -33,6 +33,11 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - `COXSWAIN_HOME` moves `~/coxswain` (clones, worktrees, checkouts, language servers); with `COXSWAIN_USER_DATA` it runs a second, separate coxswain, e.g. one per git identity. See ADR 0005 decision 6.
 - The folder is made on start and taken by its real path: git lists worktrees by theirs, so through a symlink (macOS's `/tmp`) coxswain wouldn't know its own worktrees and couldn't prune or remake them. A test names the folder through a symlink and fails without the real path.
 - No schema change. Two coxswains don't share clones or downloads.
+## 2026-11-20 — Adopting the user's worktrees
+
+- With `COXSWAIN_ADOPT_WORKTREES` set, a local repository's branch checked out in one of the user's own worktrees is reviewed there instead of refused: coxswain's worktree path becomes a symlink to it. Never the repository's own checkout. See ADR 0046.
+- The link is checked on every open: a removed worktree or one switched to another branch drops it, and the workspace gets a worktree of coxswain's. Auto-update is turned off on every open of an adopted one, so coxswain never resets the user's work. Language servers get the real path.
+- A test covers off-by-default, adoption, the user switching branches there (fails if an existing link is trusted), and the main checkout staying refused. No schema change.
 
 ## 2026-11-07 — Release v1.10.3
 

@@ -5,7 +5,19 @@ import { readFile } from "node:fs/promises";
 import { execFile, spawn } from "node:child_process";
 import { match } from "ts-pattern";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+} from "node:fs";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
 import type { Db } from "./db";
 import { coxswainHome } from "./home.ts";
@@ -90,6 +102,10 @@ export const worktreePath = (
     projectDir(p),
     w.branch ? `branch-${w.branch.replaceAll("/", "+")}` : `pr-${w.prNumber}`,
   );
+
+// ADR 0046: with COXSWAIN_ADOPT_WORKTREES set, a branch checked out in one of the user's own worktrees is reviewed there
+// (adopted) rather than refused.
+const adopting = () => !!process.env.COXSWAIN_ADOPT_WORKTREES;
 
 const fileReads = new FileReadQueue();
 const contentDigests = new ContentDigests();
@@ -282,7 +298,8 @@ export async function openWorktree(
     const upstream = `origin/${branch}`;
     const expectedHead = await prepareRemoteUpdate(db, workspaceId, path, upstream, manual);
     await git(repo, ["fetch", "origin", `+refs/heads/${branch}:refs/remotes/${upstream}`]);
-    await addWorktree(repo, path, branch, upstream, true);
+    if (await addWorktree(repo, path, branch, upstream, true))
+      await setAutoUpdate(db, workspaceId, false);
     const notice = await catchUp(db, workspaceId, path, upstream, expectedHead, manual);
     const opened = { head: pr.head, mergeBase: pr.mergeBase, prNumber, remote: true };
     lastOpened.set(workspaceId, opened);
@@ -330,7 +347,8 @@ function openBranch(
       w.path && (await hasRef(repo, `refs/heads/${base}`))
         ? `refs/heads/${base}`
         : `origin/${base}`;
-    await addWorktree(repo, path, branch, pushed ? `origin/${branch}` : baseRef, pushed);
+    if (await addWorktree(repo, path, branch, pushed ? `origin/${branch}` : baseRef, pushed))
+      await setAutoUpdate(db, workspaceId, false);
     const behind = pushed
       ? await catchUp(db, workspaceId, path, `origin/${branch}`, expectedHead, manual)
       : null;
@@ -353,7 +371,9 @@ const hasOrigin = async (repo: string) =>
 // the branch already, e.g. one named by an older coxswain or a database made since, so it's moved here, local changes
 // and all (coxswain's registrations whose folder is gone are dropped first); else one is added, the branch made from
 // start if it doesn't exist yet, tracking start if track. A worktree that isn't coxswain's is never moved (ADR 0040): in
-// a local repository it's the user's, so a branch checked out there can't be a workspace's.
+// a local repository it's the user's, so a branch checked out there can't be a workspace's, unless coxswain adopts it
+// (ADR 0046): path is then a symlink to it, followed again on every open, as the user may have removed it or checked out
+// another branch there since. True when adopted: the worktree is the user's, so coxswain mustn't update it.
 // ponytail: fails when the branch is the default branch, which the clone itself has checked out; make the clone bare
 // (with an explicit fetch refspec) if such PRs show up.
 async function addWorktree(
@@ -362,9 +382,12 @@ async function addWorktree(
   branch: string,
   start: string,
   track: boolean,
-) {
-  if (existsSync(join(path, ".git"))) return;
-  if (existsSync(path) && readdirSync(path).length)
+): Promise<boolean> {
+  const link = lstatSync(path, { throwIfNoEntry: false })?.isSymbolicLink()
+    ? readlinkSync(path)
+    : null;
+  if (link === null && existsSync(join(path, ".git"))) return false;
+  if (link === null && existsSync(path) && readdirSync(path).length)
     throw new GitError(
       `${path} exists and isn't a worktree; move it away and reopen the workspace`,
     );
@@ -372,12 +395,21 @@ async function addWorktree(
   const holder = (await worktreeList(repo)).find((w) =>
     w.lines.includes(`branch refs/heads/${branch}`),
   )?.path;
-  if (holder && holder !== repo && !isOurs(holder))
-    throw new GitError(
-      `“${branch}” is checked out at ${holder}; check out another branch there, or start the workspace on another one`,
-    );
+  const theirs = holder && holder !== repo && !isOurs(holder) ? holder : null;
+  if (link !== null && (link !== theirs || !adopting())) unlinkSync(path);
+  if (theirs) {
+    if (!adopting())
+      throw new GitError(
+        `“${branch}” is checked out at ${theirs}; check out another branch there, or start the workspace on another one`,
+      );
+    if (link !== theirs) {
+      mkdirSync(dirname(path), { recursive: true });
+      symlinkSync(theirs, path, "junction");
+    }
+    return true;
+  }
   if (holder && holder !== repo) await git(repo, ["worktree", "move", holder, path]);
-  if (existsSync(join(path, ".git"))) return;
+  if (existsSync(join(path, ".git"))) return false;
   const hasBranch = await hasRef(repo, `refs/heads/${branch}`);
   await git(
     repo,
@@ -385,6 +417,7 @@ async function addWorktree(
       ? ["worktree", "add", path, branch]
       : ["worktree", "add", track ? "--track" : "--no-track", "-b", branch, path, start],
   );
+  return false;
 }
 
 // The repository's worktrees, as `git worktree list --porcelain` gives them: each one's path and its lines.
@@ -1147,7 +1180,9 @@ export async function checkoutAt(
   commit: string | null,
 ): Promise<Checkout> {
   const w = await getWorkspaceRepo(db, workspaceId);
-  const worktree = await openedWorktree(db, workspaceId);
+  // Its real path, not the symlink to an adopted worktree (ADR 0046): servers answer with real paths, and results
+  // outside the checkout are dropped.
+  const worktree = realpathSync(await openedWorktree(db, workspaceId));
   if (commit === null || commit === (await snapshotOf(worktree)))
     return { path: worktree, worktree };
   if (!isCommit(commit)) throw new GitError(`Not a commit: ${commit}`);

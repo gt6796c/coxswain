@@ -38,7 +38,8 @@ second kind of project.
    a branch checked out in one of the user's worktrees can't be a workspace's (it isn't moved), and stale
    registrations are dropped one by one (`git worktree remove --force` on a missing folder), never with
    `git worktree prune`, which would also drop the user's, e.g. one on a drive that isn't mounted. This replaces ADR 0008's decision 1 for local repositories; a GitHub repository
-   picked from the list is still cloned.
+   picked from the list is still cloned. To review a branch in the user's worktree instead, see
+   [ADR 0046](0046-adopting-the-users-worktrees.md).
 4. **Where a branch starts and what's pushed, without GitHub.** A local repository's branch workspaces start from the
    local base branch (the user's own), or `origin/<base>` if there's no local one. The base branches offered are its
    local branches and `origin/`'s, the default being the branch the user's checkout is on. What's pushed is what
