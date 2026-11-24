@@ -24,14 +24,25 @@ export async function threadsAfter(db: Db, workspaceId: number, after: number): 
   return roots.map((r) => r.id);
 }
 
-// Threads remembered as a session's, so replies on them wait for it.
+// Threads remembered as a session's, so replies on them wait for it. The setting outlives its thread (deleted with its
+// view when the Guide is replaced), and SQLite gives the id to a new entry again once the newest ones are gone, so it
+// records when the thread was started: a thread with that id started at another time isn't the session's.
+// ponytail: settings of deleted threads stay, a few bytes each. Prune them if the table ever matters.
 export async function rememberThreads(db: Db, threadIds: number[], session: string) {
-  for (const id of threadIds)
+  if (!threadIds.length) return;
+  const threads = await db
+    .selectFrom("entries")
+    .select(["id", "created_at"])
+    .where("id", "in", threadIds)
+    .execute();
+  for (const { id, created_at } of threads) {
+    const value = JSON.stringify({ session, startedAt: created_at });
     await db
       .insertInto("settings")
-      .values({ key: key(id), value: session })
-      .onConflict((oc) => oc.column("key").doUpdateSet({ value: session }))
+      .values({ key: key(id), value })
+      .onConflict((oc) => oc.column("key").doUpdateSet({ value }))
       .execute();
+  }
 }
 
 // The newest entry's id, to tell the entries a call adds.
@@ -51,11 +62,19 @@ export async function waitForTerminal(db: Db, e: NewEntry): Promise<null> {
 }
 
 // The terminal session a thread's replies wait for, or null when they go to the agent pane as usual.
+// A setting that isn't JSON is from before startedAt and can't be told from a reused id, so it's ignored.
 export async function terminalSession(db: Db, threadId: number): Promise<string | null> {
   const row = await db
     .selectFrom("settings")
-    .select("value")
-    .where("key", "=", key(threadId))
+    .innerJoin("entries", (j) => j.on("entries.id", "=", threadId))
+    .select(["settings.value", "entries.created_at"])
+    .where("settings.key", "=", key(threadId))
     .executeTakeFirst();
-  return row?.value ?? null;
+  if (!row) return null;
+  try {
+    const { session, startedAt } = JSON.parse(row.value);
+    return startedAt === row.created_at && typeof session === "string" ? session : null;
+  } catch {
+    return null;
+  }
 }

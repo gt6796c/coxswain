@@ -50,7 +50,8 @@ coxswain's tools are served only to pane sessions, on a port that changes every 
    without the keyboard, so the user keeps typing in the terminal.
 7. **Replies on a session's findings wait for it.** The session names itself once (`set_session_name`, its name as
    ListAgents shows it; nothing in its environment says it), and each finding or explanation it adds keeps that name in
-   settings (`terminal.replies.<thread>`, no migration). Those it added on the same connection before naming itself
+   settings (`terminal.replies.<thread>`, no migration), with when the thread was started: the setting outlives a
+   thread deleted with its view, and SQLite can give that id to a new entry, which isn't the session's. Those it added on the same connection before naming itself
    are claimed when it does, so the order of the calls doesn't matter. A reply on such a thread stays a note instead of
    going to the agent pane, as replies on agent threads otherwise do (`src/core/terminal-replies.ts`). It waits in
    `read_review`, with the user's other comments, until the user tells the session to take them; the session answers
