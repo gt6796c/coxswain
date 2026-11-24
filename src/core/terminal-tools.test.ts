@@ -34,10 +34,11 @@ const git = (cwd: string, ...args: string[]) =>
 const bridgeScript = join(import.meta.dirname, "../../scripts/coxswain-mcp.mjs");
 
 // The bridge as Claude Code runs it: a child in the session's directory, one JSON-RPC message per line.
-function bridge(cwd: string, userData: string) {
+// sessionId is the Claude Code session's (CLAUDE_CODE_SESSION_ID); none by default, as these tests may run inside one.
+function bridge(cwd: string, userData: string, sessionId = "") {
   const child: ChildProcessWithoutNullStreams = spawn(process.execPath, [bridgeScript], {
     cwd,
-    env: { ...process.env, COXSWAIN_USER_DATA: userData },
+    env: { ...process.env, COXSWAIN_USER_DATA: userData, CLAUDE_CODE_SESSION_ID: sessionId },
   });
   child.stderr.pipe(process.stderr);
   child.on("exit", (code) => {
@@ -185,32 +186,39 @@ test("a terminal session gets its branch's tools, reads the user's comments and 
   assert.ok(root.resolved_at);
   assert.equal((await session.call("finish_guide")).isError, false);
 
-  // Replies on what a named session adds wait for it in read_review; before it names itself, the finding says how.
+  // Replies on what a named session adds wait for it in read_review. A finding added before the session names itself
+  // says to, and naming claims it too.
   await session.call("start_guide");
   const finding = (body: string) =>
     session.call("add_finding", { path: "a.ts", side: "new", start_line: 1, end_line: 1, body });
-  assert.match((await finding("[G1-C1] unnamed")).text, /call set_session_name first/);
-  assert.equal((await session.call("set_session_name", { name: " backend-b0 " })).isError, false);
+  assert.match((await finding("[G1-C1] unnamed")).text, /Call set_session_name now/);
+  const findings = async () =>
+    db
+      .selectFrom("entries")
+      .select(["id", "body"])
+      .where("kind", "=", "finding")
+      .orderBy("id")
+      .execute();
+  assert.equal(await terminalSession(db, (await findings())[0].id), null);
+  assert.deepEqual(await session.call("set_session_name", { name: " backend-b0 " }), {
+    isError: false,
+    text: "Replies on the findings and explanations you add, and the 1 you added before, wait for backend-b0 in read_review.",
+  });
   assert.doesNotMatch((await finding("[G1-C2] named")).text, /set_session_name/);
-  const findings = await db
-    .selectFrom("entries")
-    .select(["id", "body"])
-    .where("kind", "=", "finding")
-    .orderBy("id")
-    .execute();
-  assert.equal(await terminalSession(db, findings[0].id), null);
-  assert.equal(await terminalSession(db, findings[1].id), "backend-b0");
+  const [unnamed, named] = await findings();
+  assert.equal(await terminalSession(db, unnamed.id), "backend-b0");
+  assert.equal(await terminalSession(db, named.id), "backend-b0");
   assert.equal((await session.call("read_review")).text, "No open thread waits on you.");
   assert.equal(
     await waitForTerminal(db, {
       workspaceId: workspace.id,
       body: "Is this right?",
-      parentId: findings[1].id,
+      parentId: named.id,
     }),
     null,
   );
   const waiting = (await session.call("read_review")).text;
-  assert.match(waiting, new RegExp(`^1 open thread\\(s\\)[^]*Thread ${findings[1].id}, on`));
+  assert.match(waiting, new RegExp(`^1 open thread\\(s\\)[^]*Thread ${named.id}, on`));
   assert.match(waiting, /Me: Is this right\?$/);
   assert.equal((await session.call("finish_guide")).isError, false);
 
@@ -266,7 +274,7 @@ test("a session in the main checkout picks the branch to review with use_workspa
   await openTarget(db, { project: { path: repo }, branch: "spare" });
 
   // The main checkout is on the branch workspaces start from: nothing to review, and the error says what to do.
-  const session = bridge(repo, userData);
+  const session = bridge(repo, userData, "session-dd");
   t.after(session.close);
   assert.ok((await session.names()).includes("use_workspace"));
   const onMain = `coxswain: ${repo} is on main, the branch svc's workspaces start from, so it has no changes to review. Call use_workspace with the branch or PR to review, or start the session in that branch's worktree.`;
@@ -318,4 +326,23 @@ test("a session in the main checkout picks the branch to review with use_workspa
   // Going back to the main checkout's branch is refused like the first call, and the pick holds.
   assert.deepEqual(await session.call("use_workspace"), { isError: true, text: onMain });
   assert.equal((await session.call("read_review")).text, "No open thread waits on you.");
+
+  // A new bridge for the same Claude Code session (/mcp reconnect) carries on with its pick and name; another session's
+  // starts over in its directory's branch.
+  session.close();
+  const again = bridge(repo, userData, "session-dd");
+  t.after(again.close);
+  await again.rpc("initialize");
+  const after = await again.call("add_finding", {
+    path: "b.ts",
+    side: "new",
+    start_line: 1,
+    end_line: 1,
+    body: "[G1-C2] after the reconnect",
+  });
+  assert.equal(after.isError, false);
+  assert.doesNotMatch(after.text, /set_session_name/);
+  const other = bridge(repo, userData, "session-other");
+  t.after(other.close);
+  assert.deepEqual(await other.call("read_review"), { isError: true, text: onMain });
 });

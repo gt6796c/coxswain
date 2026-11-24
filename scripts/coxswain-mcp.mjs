@@ -6,7 +6,7 @@
 // session's directory; the app opens that branch's workspace, or the one use_workspace picked, and answers each call.
 // No app running: the call says so.
 import { execFileSync } from "node:child_process";
-import { readFileSync, realpathSync, watch } from "node:fs";
+import { mkdirSync, readFileSync, realpathSync, watch, writeFileSync } from "node:fs";
 import { connect } from "node:net";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
@@ -54,6 +54,25 @@ let nextId = 1;
 let pick = {};
 // set_session_name's arguments, said again on each new connection: the app keeps the name per connection.
 let named = null;
+
+// Both are kept per Claude Code session in <userData>/terminal-sessions/<id>.json, so a new bridge for the same session
+// (/mcp reconnect, a resumed session) carries on with them instead of starting over in cwd's branch, unnamed.
+// ponytail: the files are never removed; they're a few bytes each. Prune by age if the folder ever matters.
+const sessionId = process.env.CLAUDE_CODE_SESSION_ID;
+const stateFile =
+  sessionId && /^[\w-]+$/.test(sessionId)
+    ? join(userData, "terminal-sessions", `${sessionId}.json`)
+    : null;
+try {
+  if (stateFile) ({ pick = {}, named = null } = JSON.parse(readFileSync(stateFile, "utf8")));
+} catch {} // none yet
+function saveState() {
+  if (!stateFile) return;
+  try {
+    mkdirSync(dirname(stateFile), { recursive: true });
+    writeFileSync(stateFile, JSON.stringify({ pick, named }));
+  } catch {}
+}
 
 function open() {
   const opening = new Promise((resolve, reject) => {
@@ -121,6 +140,7 @@ async function useWorkspace(message) {
   try {
     connection = open();
     const { label } = await connection;
+    saveState();
     old?.then(
       ({ socket }) => socket.destroy(),
       () => {},
@@ -145,8 +165,10 @@ async function call(message) {
       pending.set(id, { resolve, reject });
       socket.write(`${JSON.stringify({ ...message, id })}\n`);
     });
-    if (message.params?.name === "set_session_name" && !reply.result?.isError)
+    if (message.params?.name === "set_session_name" && !reply.result?.isError) {
       named = message.params.arguments;
+      saveState();
+    }
     return { ...reply, id: message.id };
   } catch (e) {
     // No connection: the name is kept for the next one, which use_workspace may open.
@@ -154,6 +176,7 @@ async function call(message) {
     if (message.params?.name !== "set_session_name" || typeof name !== "string" || !name.trim())
       return answer(message.id, e.message, true);
     named = message.params.arguments;
+    saveState();
     return answer(
       message.id,
       `${e.message}\nThe name is kept: coxswain gets it once it connects.`,

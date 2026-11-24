@@ -11,13 +11,8 @@ import { emit } from "./events.ts";
 
 const key = (threadId: number) => `terminal.replies.${threadId}`;
 
-// The threads a session started since `after` (an entry id), remembered as its.
-export async function rememberThreads(
-  db: Db,
-  workspaceId: number,
-  after: number,
-  session: string,
-): Promise<number> {
+// The findings and explanations started in the workspace since `after` (an entry id): what a call just added.
+export async function threadsAfter(db: Db, workspaceId: number, after: number): Promise<number[]> {
   const roots = await db
     .selectFrom("entries")
     .select("id")
@@ -26,13 +21,17 @@ export async function rememberThreads(
     .where("parent_id", "is", null)
     .where("kind", "in", ["finding", "explanation"])
     .execute();
-  for (const { id } of roots)
+  return roots.map((r) => r.id);
+}
+
+// Threads remembered as a session's, so replies on them wait for it.
+export async function rememberThreads(db: Db, threadIds: number[], session: string) {
+  for (const id of threadIds)
     await db
       .insertInto("settings")
       .values({ key: key(id), value: session })
       .onConflict((oc) => oc.column("key").doUpdateSet({ value: session }))
       .execute();
-  return roots.length;
 }
 
 // The newest entry's id, to tell the entries a call adds.

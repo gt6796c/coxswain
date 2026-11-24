@@ -14,7 +14,7 @@ coxswain's tools are served only to pane sessions, on a port that changes every 
 ## Decision
 
 1. **A bridge**, `scripts/coxswain-mcp.mjs`, is a stdio MCP server the user registers once
-   (`claude mcp add -s user coxswain -- node <path>`). It has no dependencies and keeps no state but its connection.
+   (`claude mcp add -s user coxswain -- node <path>`). It has no dependencies. Its state is its connection and the session's workspace pick and name (point 4).
 2. **Tools are listed from a catalog**, `<userData>/terminal-tools.json`, written by the app when it starts and when a
    terminal session opens a workspace: the tools and the local repositories. A session lists tools once, when it
    starts, maybe before the app; the bridge lists them only inside a repository coxswain has (by its main checkout), so
@@ -33,7 +33,10 @@ coxswain's tools are served only to pane sessions, on a port that changes every 
    directory is where the session started, so a session that moved since (EnterWorktree, `cd`) still works on that
    branch: `start_guide`'s answer names the workspace, and says to switch if it isn't the one under review. The bridge also
    says the session's name (`set_session_name`, point 7) again on each new connection, since the app keeps it per
-   connection.
+   connection. The pick and the name are saved per Claude Code session (`CLAUDE_CODE_SESSION_ID`, which Claude Code
+   gives the bridge) in `<userData>/terminal-sessions/<id>.json`, so a new bridge for the same session (`/mcp`
+   reconnect, a resumed session) carries on with them; a fresh one would start over in the main checkout, unnamed, and
+   the session's next calls would fail or its findings go unclaimed.
 5. **The tools** are the pane's view tools less `publish_guide`, plus `read_review` (open anchored threads whose last
    entry isn't an agent's: the user's comments and their replies to findings, with thread ids and code; with `all`, the
    agent's own open threads too, so a second review can skip findings already there and resolve those that no longer
@@ -46,8 +49,9 @@ coxswain's tools are served only to pane sessions, on a port that changes every 
    (`src/core/show-thread.ts`); the main process sends it to the window (`src/main/show-thread.ts`), which comes forward
    without the keyboard, so the user keeps typing in the terminal.
 7. **Replies on a session's findings wait for it.** The session names itself once (`set_session_name`, its name as
-   ListAgents shows it; nothing in its environment says it), and each finding or explanation it adds afterwards keeps
-   that name in settings (`terminal.replies.<thread>`, no migration). A reply on such a thread stays a note instead of
+   ListAgents shows it; nothing in its environment says it), and each finding or explanation it adds keeps that name in
+   settings (`terminal.replies.<thread>`, no migration). Those it added on the same connection before naming itself
+   are claimed when it does, so the order of the calls doesn't matter. A reply on such a thread stays a note instead of
    going to the agent pane, as replies on agent threads otherwise do (`src/core/terminal-replies.ts`). It waits in
    `read_review`, with the user's other comments, until the user tells the session to take them; the session answers
    each with `reply_to_thread`. Queued, not forwarded one by one: a session woken per comment reacts to each
