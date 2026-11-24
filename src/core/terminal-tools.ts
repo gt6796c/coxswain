@@ -17,6 +17,7 @@ import {
 } from "./git.ts";
 import { openTarget } from "./open-target.ts";
 import { listProjects } from "./projects.ts";
+import { removeWorkspace } from "./workspaces.ts";
 import { emit } from "./events.ts";
 import { match, P } from "ts-pattern";
 import { requestShowThread } from "./show-thread.ts";
@@ -282,6 +283,20 @@ export function terminalTools(db: Db, workspaceId: number, label = ""): McpTool[
       },
     },
     {
+      name: "remove_workspace",
+      annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: false },
+      description:
+        "Remove the workspace you work on from coxswain, with its Guide and review threads, once its work is over (merged or dropped). Call it before you remove its worktree or delete its branch, so coxswain doesn't keep a workspace whose code is gone; afterwards coxswain can't find the workspace from your directory. The worktree and the branch stay: remove them yourself.",
+      inputSchema: { type: "object", properties: {} },
+      call: async () => {
+        // As Remove Workspace in the sidebar: its pane sessions end with it. Tests can't load agents.ts.
+        const agents = await import("./agents.ts").catch(() => null);
+        await agents?.closeWorkspaceSessions(db, workspaceId);
+        await removeWorkspace(db, workspaceId);
+        return `coxswain removed the workspace (${label}), with its Guide and review threads. Its worktree and branch are still there. Your next coxswain call works on the branch where you run, or on what use_workspace picks.`;
+      },
+    },
+    {
       name: "finish_guide",
       annotations: closedTool,
       description:
@@ -431,6 +446,9 @@ export async function serveTerminal(
     }
     const reply = await answerMcp(tools, msg);
     if (reply && socket.writable) socket.write(`${JSON.stringify(reply)}\n`);
+    // This connection's tools are the removed workspace's: the bridge connects again for the next call.
+    const done = (reply as { result?: { isError?: boolean } } | null)?.result?.isError === false;
+    if (msg.params?.name === "remove_workspace" && done) socket.end();
   });
   socket.on("end", () => socket.end());
 }

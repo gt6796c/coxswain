@@ -358,4 +358,22 @@ test("a session in the main checkout picks the branch to review with use_workspa
   const other = bridge(repo, userData, "session-other");
   t.after(other.close);
   assert.deepEqual(await other.call("read_review"), { isError: true, text: onMain });
+
+  // Removing the workspace drops it and the pick: the next call, and the next bridge, are back in the main checkout.
+  const removed = await again.call("remove_workspace");
+  assert.deepEqual(removed, {
+    isError: false,
+    text: `coxswain removed the workspace (svc: branch feature, its code in ${worktree}), with its Guide and review threads. Its worktree and branch are still there. Your next coxswain call works on the branch where you run, or on what use_workspace picks.`,
+  });
+  const gone = await db
+    .selectFrom("workspaces")
+    .select("id")
+    .where("id", "=", workspace.id)
+    .executeTakeFirst();
+  assert.equal(gone, undefined);
+  assert.deepEqual(await again.call("read_review"), { isError: true, text: onMain });
+  again.close();
+  const later = bridge(repo, userData, "session-dd");
+  t.after(later.close);
+  assert.deepEqual(await later.call("read_review"), { isError: true, text: onMain });
 });

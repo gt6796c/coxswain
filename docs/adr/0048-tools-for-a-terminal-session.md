@@ -43,7 +43,10 @@ coxswain's tools are served only to pane sessions, on a port that changes every 
    hold),
    `reply_to_thread` (an answer entry), `resolve_thread` (not a thread on GitHub: the user resolves those there),
    `show_thread` and `finish_guide`. A pane turn ending marks its views written (glossary "Being written"); a terminal
-   session has no turn coxswain sees, so it calls `finish_guide`.
+   session has no turn coxswain sees, so it calls `finish_guide`. `remove_workspace` removes the session's workspace as
+   the sidebar's Remove Workspace does, for a session cleaning up its worktree: before the worktree goes, since a
+   directory that's gone can't name its workspace. The app closes the connection after it, and the bridge drops its pick,
+   so the next call doesn't open the workspace again.
 6. **`show_thread` moves the window** to a thread, by its id or by words only its first comment has (a review's label,
    `[G1-L2]`), as picking it in the sidebar does. The core hands the thread's first entry to a listener
    (`src/core/show-thread.ts`); the main process sends it to the window (`src/main/show-thread.ts`), which comes forward

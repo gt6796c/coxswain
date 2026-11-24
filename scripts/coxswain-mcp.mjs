@@ -169,6 +169,12 @@ async function call(message) {
       named = message.params.arguments;
       saveState();
     }
+    // The app closes the connection; a pick kept would open the removed workspace again.
+    if (message.params?.name === "remove_workspace" && !reply.result?.isError) {
+      pick = {};
+      connection = null;
+      saveState();
+    }
     return { ...reply, id: message.id };
   } catch (e) {
     // No connection: the name is kept for the next one, which use_workspace may open.
