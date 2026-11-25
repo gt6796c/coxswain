@@ -172,8 +172,9 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   gets a raised pill; inactive tabs use quiet separators. When their minimum
   widths no longer fit, the strip scrolls horizontally without a visible scrollbar; the selected tab is
   brought into view. Each shows its PR title (number or branch while offline), PR number, PR/branch icon and agent
-  status dot (amber: waiting on permission, pulsing blue: working, green: done). The branch and full title are in
-  the tooltip. Left/Right and Home/End switch tabs from the keyboard. _File ▸ Remove Workspace…_ (also in the
+  status dot (amber: waiting on permission, pulsing blue: working, green: done), and a small terminal mark (`>_`,
+  muted) while a terminal session pointed at it is connected (ADR 0049). The branch and full title are in
+  the tooltip, with the names of those terminal sessions. Left/Right and Home/End switch tabs from the keyboard. _File ▸ Remove Workspace…_ (also in the
   command palette, and on right-click of the HTML tabs; the native tabs have no context menu) removes the current one,
   with the existing confirmation: comments, reviewed files and sessions are deleted, the worktree stays on disk.
   There is no workspace sidebar. New workspace (+), the chat toggle and Settings stay visible after the tabs.
@@ -217,6 +218,11 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   order), and Enter navigates to the file already displayed in Guide or Changes when available. Otherwise it opens the file in _Files_, with the file selected and its folders open. Esc or a click outside closes it. Actions it lists: Back and Forward, show or hide the Navigator and Commits,
   show the diff or a view, each New View, Unified or Split diffs, show or hide reviewed files, open a workspace, New
   Workspace, switch project, Add Project, Settings. Actions that can't run now (Back at the start) aren't listed.
+  _Terminal Sessions…_ lists every terminal session connected now (ADR 0049), across projects: its name, its Claude
+  account when there is more than one, and the workspace it points at or _No workspace_. One that can't take messages
+  says why (_Restart this session to connect_, _No inbox: Claude Code before 2.1.224_). For a few seconds after
+  coxswain starts the list says _Sessions are reconnecting…_ above whatever has come back. Enter on one opens its
+  workspace with that session picked in the agent pane; on one with no workspace, it does nothing but show why.
 
   _View > Back_ (⌥⌘←) and _View > Forward_ (⌥⌘→), or the chevrons in the canvas bar, step through what the canvas
   showed (ADR 0025): each whole file opened (from _Files_, Open Quickly, Go to Definition or Find Usages), each file
@@ -400,6 +406,15 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   chevron next to it picks another (_Claude Code_, _Codex_), which the session keeps. The chat shows its turns, with
   each tool the agent used as one line, and comments and reviews sent from the canvas as cards.
 
+  The picker's menu ends with a _Terminal_ section: the terminal sessions connected now that point at this workspace
+  (ADR 0049), by name, each with `>_`. Picking one makes it the pane's session, so the composer and comments sent from
+  the canvas go to it as pushes; the header shows its name and _Terminal_, muted, where an agent session shows its
+  agent. coxswain doesn't see that session's conversation, so the pane shows only what was pushed to it, each with
+  _Delivered_ or why not, and the composer reads _Send to <name>…_. Answers come back as threads on the canvas, which
+  the session writes with coxswain's tools. When it disconnects, the pane says so and the composer is disabled until it
+  connects again; a session that never comes back drops from the picker, and the pane goes back to the workspace's
+  current agent session.
+
   The composer is one box at the bottom: _Ask Codex…_ (Enter sends, Shift+Enter adds a line; Home and End go to the start and end of the text, as in every text box; `/` lists the session's slash commands above the box, ↑↓ to pick, Tab or Enter to complete, Esc to hide), and along its bottom
   an attachment button (paperclip) on the left, the agent picks (the model ✦ and the effort, each a button with a native menu of the agent's choices, kept per agent
   for all its sessions) and a round send button, greyed out while the box and attachments are empty. While a turn runs, _Working_ and a
@@ -438,6 +453,8 @@ A prose-only view has no reviewable files. An empty view says _Nothing in this v
   opened and agent sessions still to come) and to run any action.
 - Projects, repositories and PRs must be quick to reach: L1 and ⌘K.
 - Agent sessions must be quick to reach: L4's picker in the current workspace, and ⌘K for all of them.
+- Terminal sessions too: the mark on L1's tabs says where they are, L4's picker reaches those of the current
+  workspace, and ⌘K's _Terminal Sessions…_ all of them, with or without a workspace.
 
 ## Open questions
 
@@ -456,6 +473,9 @@ A prose-only view has no reviewable files. An empty view says _Nothing in this v
 6. **The canvas:** what else it shows (the PR's history), and how the agent and the human switch
    between them. An annotation on lines is an entry (ADR 0023); the agent has tools to make views (ADR 0026), but not
    yet to navigate the app or read its context. Interactive views (Excalidraw and the like) are deferred.
+7. **A terminal session in L4:** the pane shows only what was pushed to it, since coxswain can't see its
+   conversation. Should it also show the threads it wrote, or its busy/idle state (Claude Code's undocumented session
+   file has it)? Does a push wait while it's busy, or go in between its tool calls as Claude Code delivers it?
 
 ## Continuity when navigating
 
