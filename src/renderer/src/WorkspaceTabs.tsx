@@ -31,10 +31,12 @@ import {
   XIcon,
   GitHubIcon,
   githubMark,
+  TerminalIcon,
 } from "./components/icons";
 import { cn, divider, muted, noDrag, titleBar } from "./components/styles";
 import { gitHubOf, projectLabel, workspaceLabel } from "./format";
 import { core } from "./queries";
+import { terminalsByWorkspace, useTerminalSessions } from "./terminal-sessions";
 
 type Props = {
   settingsOpen: boolean;
@@ -96,6 +98,7 @@ export function WorkspaceTabs({
       query?.queryKey[1] === repo?.owner && query?.queryKey[2] === repo?.name ? before : undefined,
   }).data;
   const statuses = useQuery(core("listAgentStatuses")).data ?? {};
+  const terminals = terminalsByWorkspace(useTerminalSessions().sessions);
   const openPreview = async () => {
     const deployments = pullRequest?.deployments ?? [];
     if (deployments.length === 1) {
@@ -148,6 +151,7 @@ export function WorkspaceTabs({
       pullRequest={pullRequest}
       pulls={pulls}
       statuses={statuses}
+      terminals={terminals}
     >
       <div className={cn(titleBar, "workspace-bar gap-2 border-b pr-3 pl-24 text-xs", divider)}>
         <ToggleButton
@@ -203,6 +207,7 @@ export function WorkspaceTabs({
               pull={w.prNumber !== null ? pulls.get(w.prNumber) : undefined}
               selected={!settingsActive && w.id === current?.id}
               status={statuses[w.id] ?? "idle"}
+              terminals={terminals.get(w.id) ?? []}
               onClick={() => onSelect(w)}
               onClose={() => onClose(w)}
               onContextMenu={async () => {
@@ -301,6 +306,7 @@ function NativeWorkspaceBar(
   props: Props & {
     pulls: Map<number, PullRequestTitle>;
     statuses: Record<number, AgentStatus>;
+    terminals: Map<number, string[]>;
     children: ReactNode;
   },
 ) {
@@ -331,7 +337,8 @@ function NativeWorkspaceBar(
     const pull = w.prNumber !== null ? props.pulls.get(w.prNumber) : undefined;
     const title = pull?.title ?? workspaceLabel(w);
     const status = props.statuses[w.id] ?? "idle";
-    return `${title}${pull ? ` #${w.prNumber}${pull.author ? ` · @${pull.author}` : ""}` : ""}${status !== "idle" ? ` · ${statusLabels[status]}` : ""}`;
+    const terminals = props.terminals.get(w.id);
+    return `${title}${pull ? ` #${w.prNumber}${pull.author ? ` · @${pull.author}` : ""}` : ""}${status !== "idle" ? ` · ${statusLabels[status]}` : ""}${terminals ? ` · ${terminalsLabel(terminals)}` : ""}`;
   };
   const current = props.current;
   const layout = workspaceStripLayout(
@@ -398,6 +405,9 @@ function NativeWorkspaceBar(
                   font: { size: 10 },
                 }),
               ]
+            : []),
+          ...(props.terminals.has(w.id)
+            ? [ui.symbol("apple.terminal", { size: 10, foreground: "#8e8e93" })]
             : []),
           ...(status !== "idle" && !(selected && status === "done")
             ? [ui.shape("circle", { fill: statusColor, frame: { width: 6, height: 6 } })]
@@ -613,6 +623,7 @@ function WorkspaceTab({
   pull,
   selected,
   status,
+  terminals,
   onClick,
   onClose,
   onContextMenu,
@@ -621,6 +632,8 @@ function WorkspaceTab({
   pull: PullRequestTitle | undefined;
   selected: boolean;
   status: AgentStatus;
+  // The terminal sessions pointing at it (ADR 0049), by name.
+  terminals: string[];
   onClick: () => void;
   onClose: () => void;
   onContextMenu: () => void;
@@ -659,7 +672,13 @@ function WorkspaceTab({
         role="tab"
         aria-selected={selected}
         tabIndex={selected ? 0 : -1}
-        title={[title, meta, state, status !== "idle" && statusLabels[status]]
+        title={[
+          title,
+          meta,
+          state,
+          status !== "idle" && statusLabels[status],
+          terminals.length > 0 && terminalsLabel(terminals),
+        ]
           .filter(Boolean)
           .join("\n")}
         onClick={onClick}
@@ -690,6 +709,14 @@ function WorkspaceTab({
             {pull.author ? ` · @${pull.author}` : ""}
           </span>
         )}
+        {terminals.length > 0 && (
+          <span
+            aria-label={terminalsLabel(terminals)}
+            className={cn("shrink-0 [&_svg]:size-3", muted)}
+          >
+            <TerminalIcon />
+          </span>
+        )}
         {status !== "idle" && !(selected && status === "done") && (
           <span
             aria-label={statusLabels[status]}
@@ -713,6 +740,9 @@ function WorkspaceTab({
     </div>
   );
 }
+
+const terminalsLabel = (names: string[]) =>
+  `Terminal session${names.length > 1 ? "s" : ""}: ${names.join(", ")}`;
 
 const statusLabels: Record<AgentStatus, string> = {
   waiting: "Agent needs your approval",

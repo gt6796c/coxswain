@@ -641,7 +641,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("agents:state", (_, agentSessionId: string) => readAgentState(db, agentSessionId));
   ipcMain.handle("agents:statuses", () => listAgentStatuses(db));
   // ADR 0049: terminal sessions connected through their bridge, and pushing a message to one.
-  ipcMain.handle("terminal:sessions", () => listTerminalSessions());
+  ipcMain.handle("terminal:sessions", () => listTerminalSessions(db));
   ipcMain.handle("terminal:push", (_, to: string, text: string, meta?: Record<string, string>) =>
     pushToSession(to, text, meta),
   );
@@ -1113,15 +1113,16 @@ app.whenReady().then(async () => {
   // at `checked`. Resolves with the picked index, only on a click, like the menus above.
   ipcMain.handle(
     "menus:pick",
-    (e, labels: string[], checked: number) =>
+    (e, labels: string[], checked: number, sections: Record<number, string> = {}) =>
       new Promise<number>((resolve) =>
         Menu.buildFromTemplate(
-          labels.map((label, i) => ({
-            label,
-            type: "radio" as const,
-            checked: i === checked,
-            click: () => resolve(i),
-          })),
+          labels.flatMap((label, i) => [
+            // A section starting at this label: a separator, then its title.
+            ...(sections[i] !== undefined
+              ? [{ type: "separator" as const }, { label: sections[i], enabled: false }]
+              : []),
+            { label, type: "radio" as const, checked: i === checked, click: () => resolve(i) },
+          ]),
         ).popup({ window: BrowserWindow.fromWebContents(e.sender) ?? undefined }),
       ),
   );

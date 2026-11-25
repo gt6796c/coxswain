@@ -223,6 +223,7 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   says why (_Restart this session to connect_, _No inbox: Claude Code before 2.1.224_). For a few seconds after
   coxswain starts the list says _Sessions are reconnecting…_ above whatever has come back. Enter on one opens its
   workspace with that session picked in the agent pane; on one with no workspace, it does nothing but show why.
+  Typing `@` in the palette goes straight to that list.
 
   _View > Back_ (⌥⌘←) and _View > Forward_ (⌥⌘→), or the chevrons in the canvas bar, step through what the canvas
   showed (ADR 0025): each whole file opened (from _Files_, Open Quickly, Go to Definition or Find Usages), each file
@@ -407,13 +408,13 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   each tool the agent used as one line, and comments and reviews sent from the canvas as cards.
 
   The picker's menu ends with a _Terminal_ section: the terminal sessions connected now that point at this workspace
-  (ADR 0049), by name, each with `>_`. Picking one makes it the pane's session, so the composer and comments sent from
-  the canvas go to it as pushes; the header shows its name and _Terminal_, muted, where an agent session shows its
-  agent. coxswain doesn't see that session's conversation, so the pane shows only what was pushed to it, each with
+  (ADR 0049), by name, under a _Terminal_ heading. Picking one makes it the pane's session, so the composer and
+  comments sent from the canvas go to it as pushes; the header shows `>_`, its name and _Terminal_, muted, where an
+  agent session shows its agent. coxswain doesn't see that session's conversation, so the pane shows only what was pushed to it, each with
   _Delivered_ or why not, and the composer reads _Send to <name>…_. Answers come back as threads on the canvas, which
   the session writes with coxswain's tools. When it disconnects, the pane says so and the composer is disabled until it
-  connects again; a session that never comes back drops from the picker, and the pane goes back to the workspace's
-  current agent session.
+  connects again; a session that hasn't come back after 30 seconds drops from the picker, and the pane goes back to
+  the workspace's current agent session.
 
   The composer is one box at the bottom: _Ask Codex…_ (Enter sends, Shift+Enter adds a line; Home and End go to the start and end of the text, as in every text box; `/` lists the session's slash commands above the box, ↑↓ to pick, Tab or Enter to complete, Esc to hide), and along its bottom
   an attachment button (paperclip) on the left, the agent picks (the model ✦ and the effort, each a button with a native menu of the agent's choices, kept per agent

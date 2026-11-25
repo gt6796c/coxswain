@@ -142,11 +142,12 @@ const affects: Record<Changed["what"], Reads[]> = {
     "listChangedSinceReview",
     "listCommits",
   ],
-  projects: ["listProjects"],
-  workspaces: ["listWorkspaces", "getClosedWorkspaceTabs", "getAutoUpdate"],
+  // A terminal session points at a workspace only once coxswain has it (ADR 0049).
+  projects: ["listProjects", "listTerminalSessions"],
+  workspaces: ["listWorkspaces", "getClosedWorkspaceTabs", "getAutoUpdate", "listTerminalSessions"],
   // An agent sent its slash commands for one of its sessions.
   commands: ["agentCommands"],
-  // ADR 0049: a terminal session connected, left or was renamed.
+  // ADR 0049: a terminal session connected, left, was renamed or picked another workspace.
   "terminal-sessions": ["listTerminalSessions"],
   settings: [
     "getUiPreferences",

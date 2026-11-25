@@ -37,16 +37,19 @@ inbox socket is the way in for nearly every session.
 
 1. **A session is connected from when it starts.** Its bridge (ADR 0048) connects to `<userData>/control.sock` when
    Claude Code initializes it, not at its first tool call, and keeps that connection open:
-   `session {"protocol": 1, "session": <CLAUDE_CODE_SESSION_ID>, "name": …, "cwd": …, "account": …, "route": …}`
-   (`protocol`: point 9). coxswain answers
+   `session {"protocol": 1, "session": <CLAUDE_CODE_SESSION_ID>, "name": …, "cwd": …, "account": …, "route": …,
+   "pick": …}` (`protocol`: point 9; `pick`: point 2). coxswain answers
    `ready`. `account` is the Claude Code config folder it runs under (`CLAUDE_CONFIG_DIR`, else `~/.claude`), so one
    coxswain serves sessions of several Claude accounts; each account registers the bridge once
    (`claude mcp add -s user`). This connection only says the session is there; tool calls keep their own
    (ADR 0048 point 3), and connecting opens no workspace.
 2. **Sessions are core state** (`src/core/terminal-sessions.ts`), in memory: who is connected now, nothing stored.
-   Connecting, leaving and being renamed emit a core event (ADR 0017), and the UI lists the
-   sessions with their name, account, folder and the workspace their tool calls go to (their `use_workspace` pick, else
-   their folder's branch), or none yet. Where the list goes is UX.md's, when it is built.
+   Connecting, leaving, being renamed and picking another workspace emit a core event (ADR 0017), and the UI lists the
+   sessions with their name, account, folder and the workspace their tool calls go to: their `use_workspace` pick
+   (`{}` for none), in the hello and again as `{"pick": …}` whenever `use_workspace` or `remove_workspace` changes it,
+   else the branch checked out in their folder, read when they connect. That is matched to a workspace coxswain already
+   has, in the project whose repository holds the folder, and opens none; a session with no such workspace is listed
+   with none. UX.md says where they show.
 3. **A session is addressed by its id.** Its name (`set_session_name`, ADR 0048 point 7) is what the UI shows; the bridge
    may also read it, and whether the session is busy, from Claude Code's `<config>/sessions/<its parent pid>.json`. That
    file isn't documented, so the bridge reads it only to fill in what it would otherwise lack, and goes on without it.
@@ -117,6 +120,8 @@ inbox socket is the way in for nearly every session.
 - The `sessions/<pid>.json` read may break with any Claude Code release; the name from `set_session_name` doesn't.
 - The bridge now connects for every session in every folder; one outside coxswain's repositories (ADR 0048 point 2)
   shows in the list with no workspace.
+- A branch checked out in a session's folder after it connected isn't seen until it connects again, so the session
+  stays listed at the old branch's workspace. Worktrees rarely change branch.
 - The spike's `COXSWAIN_PUSH` variable goes; the route comes from the command line.
 - A push in flight when coxswain quits may or may not have reached the session, and nothing records which. Pushes are
   rare and each is the user's, who can see in the terminal.

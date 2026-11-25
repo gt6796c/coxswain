@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { connect, createServer, type Socket } from "node:net";
 import os from "node:os";
@@ -10,6 +10,7 @@ import { openDatabase } from "./db.ts";
 import { onEvent } from "./events.ts";
 import { startControl } from "./open-target.ts";
 import { listTerminalSessions } from "./terminal-sessions.ts";
+import { openBranchWorkspace, openPullRequestWorkspace } from "./workspaces.ts";
 
 // ADR 0049: terminal sessions connect to coxswain through their bridge, and coxswain pushes a message to one.
 const temp = realpathSync(mkdtempSync(join(os.tmpdir(), "cx-sessions-")));
@@ -107,7 +108,7 @@ async function control(t: { after: (fn: () => void) => void }, dir: string) {
   const server = await startControl(db, userData);
   assert.ok(server);
   t.after(() => server.close());
-  return { userData, sock: join(userData, "control.sock") };
+  return { db, userData, sock: join(userData, "control.sock") };
 }
 
 test("a session started with the channel flag gets pushes as channel events", async (t) => {
@@ -168,7 +169,7 @@ test("a session's bridge connects again when coxswain comes back", async (t) => 
 });
 
 test("without the flag a push goes into the session's own inbox socket, as a message from coxswain", async (t) => {
-  const { userData, sock } = await control(t, "d3");
+  const { db, userData, sock } = await control(t, "d3");
 
   // The session's inbox, as Claude Code binds it: one connection per message, JSON lines.
   const inboxPath = join(temp, "in.sock");
@@ -189,9 +190,11 @@ test("without the flag a push goes into the session's own inbox socket, as a mes
   const init = (await b.next((m) => m.id === 1)).result as Record<string, unknown>;
   assert.equal((init.capabilities as { experimental?: object }).experimental, undefined);
   assert.match(String(init.instructions), /starts 'From coxswain, sent by the/);
-  await until(() => listTerminalSessions().sessions.some((s) => s.session === "session-3"));
+  await until(async () =>
+    (await listTerminalSessions(db)).sessions.some((s) => s.session === "session-3"),
+  );
   assert.equal(
-    listTerminalSessions().sessions.find((s) => s.session === "session-3")?.route,
+    (await listTerminalSessions(db)).sessions.find((s) => s.session === "session-3")?.route,
     "inbox",
   );
 
@@ -217,7 +220,9 @@ test("without the flag a push goes into the session's own inbox socket, as a mes
   t.after(none.stop);
   none.send({ id: 1, method: "initialize", params: {} });
   await none.next((m) => m.id === 1);
-  await until(() => listTerminalSessions().sessions.some((s) => s.session === "session-4"));
+  await until(async () =>
+    (await listTerminalSessions(db)).sessions.some((s) => s.session === "session-4"),
+  );
   assert.match(
     await say(sock, `push ${JSON.stringify({ to: "session-4", text: "hi" })}`),
     /^error: session-4 can't take messages: its Claude Code has no inbox/,
@@ -225,7 +230,7 @@ test("without the flag a push goes into the session's own inbox socket, as a mes
 });
 
 test("a session unnamed by set_session_name is listed by the name Claude Code keeps for it", async (t) => {
-  const { userData } = await control(t, "d4");
+  const { db, userData } = await control(t, "d4");
   // The bridge's parent is this test process; its Claude Code would have written this.
   mkdirSync(join(temp, "account", "sessions"), { recursive: true });
   writeFileSync(
@@ -236,20 +241,21 @@ test("a session unnamed by set_session_name is listed by the name Claude Code ke
   t.after(b.stop);
   b.send({ id: 1, method: "initialize", params: {} });
   await until(
-    () =>
-      listTerminalSessions().sessions.find((s) => s.session === "session-5")?.name === "reviewer-5",
+    async () =>
+      (await listTerminalSessions(db)).sessions.find((s) => s.session === "session-5")?.name ===
+      "reviewer-5",
   );
 });
 
 test("a bridge on another protocol is listed as one to restart, and takes no pushes", async (t) => {
-  const { sock } = await control(t, "d6");
+  const { db, sock } = await control(t, "d6");
   const changes: string[] = [];
   t.after(onEvent((e) => changes.push(e.what)));
   const old = hello(sock, { session: "session-6", cwd: temp });
   t.after(() => old.socket.destroy());
   assert.match(await old.first, /^outdated: restart this session/);
   assert.equal(
-    listTerminalSessions().sessions.find((s) => s.session === "session-6")?.outdated,
+    (await listTerminalSessions(db)).sessions.find((s) => s.session === "session-6")?.outdated,
     true,
   );
   assert.ok(changes.includes("terminal-sessions"));
@@ -258,7 +264,9 @@ test("a bridge on another protocol is listed as one to restart, and takes no pus
     /^error: session-6 runs an older coxswain bridge: restart that session/,
   );
   old.socket.destroy();
-  await until(() => !listTerminalSessions().sessions.some((s) => s.session === "session-6"));
+  await until(
+    async () => !(await listTerminalSessions(db)).sessions.some((s) => s.session === "session-6"),
+  );
 });
 
 test("two sessions with one name, in two accounts, are pushed to by id", async (t) => {
@@ -276,4 +284,49 @@ test("two sessions with one name, in two accounts, are pushed to by id", async (
     await say(sock, `push ${JSON.stringify({ to: "twin", text: "hi" })}`),
     /^error: 2 sessions are named twin \(session-7a in \/a\/\.claude, session-7b in \/b\/\.claude-work\): say which by id/,
   );
+});
+
+test("a session points at its use_workspace pick's workspace, else its folder's branch's", async (t) => {
+  const { db, sock } = await control(t, "d8");
+  const repo = join(temp, "repo-8");
+  mkdirSync(repo);
+  const git = (...args: string[]) => execFileSync("git", args, { cwd: repo, stdio: "ignore" });
+  git("init", "-q", "-b", "main");
+  git(
+    "-c",
+    "user.name=t",
+    "-c",
+    "user.email=t@t",
+    "commit",
+    "-q",
+    "--allow-empty",
+    "-m",
+    "initial",
+  );
+  git("checkout", "-qb", "feature");
+  await db
+    .insertInto("projects")
+    .values({ id: 8, github: null, name: "repo-8", path: repo, last_opened_at: "" })
+    .execute();
+  const feature = await openBranchWorkspace(db, 8, "feature", "main");
+  const where = async () =>
+    (await listTerminalSessions(db)).sessions.find((s) => s.session === "session-8")?.workspace;
+
+  const s = hello(sock, { protocol: 1, session: "session-8", cwd: repo, route: "inbox" });
+  t.after(() => s.socket.destroy());
+  assert.equal(await s.first, "ready");
+  await until(async () => (await where())?.id === feature.id);
+  assert.deepEqual(await where(), { id: feature.id, projectId: 8, label: "repo-8: feature" });
+
+  // use_workspace picked a PR coxswain has no workspace for yet; then it has one.
+  s.socket.write(`${JSON.stringify({ pick: { pr: 5 } })}\n`);
+  await until(async () => (await where()) === null);
+  const pr = await openPullRequestWorkspace(db, 8, 5, "elsewhere");
+  await until(async () => (await where())?.label === "repo-8: PR #5");
+  assert.equal((await where())?.id, pr.id);
+
+  // remove_workspace dropped the pick: the folder's branch again.
+  s.socket.write(`${JSON.stringify({ pick: {} })}\n`);
+  await until(async () => (await where())?.id === feature.id);
+  assert.match(await say(sock, "sessions"), /session-8 in .* on repo-8: feature/);
 });

@@ -181,6 +181,7 @@ async function useWorkspace(message) {
     connection = open();
     const { label } = await connection;
     saveState();
+    listener?.write(`${JSON.stringify({ pick })}\n`);
     old?.then(
       ({ socket }) => socket.destroy(),
       () => {},
@@ -215,6 +216,7 @@ async function call(message) {
       pick = {};
       connection = null;
       saveState();
+      listener?.write(`${JSON.stringify({ pick })}\n`);
     }
     return { ...reply, id: message.id };
   } catch (e) {
@@ -272,6 +274,7 @@ function listen(wait = 1000) {
       cwd,
       account,
       route,
+      pick, // which workspace it points at; coxswain lists it there (ADR 0049)
     };
     socket.write(`session ${JSON.stringify(hello)}\n`);
   });

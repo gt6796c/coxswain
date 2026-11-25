@@ -8,6 +8,8 @@ import { reviewSourceDestination, type ReviewSurface } from "./source-destinatio
 import { scrollToThread } from "./components/scroll-to-thread";
 import { useUiPreferences } from "./ui-preferences";
 import { setAgentPane } from "./agent-pane";
+import type { TerminalSession } from "../../core/terminal-sessions";
+import { terminalPick } from "./terminal-sessions";
 import { fileCountLabel } from "./remaining-files";
 import { createGuideReadingPosition } from "./guide-reading-position";
 import { createDescriptionPeek } from "./description-peek";
@@ -911,12 +913,23 @@ export function App() {
   };
   const showFile = view === "files" && opened;
   const editorTabs = fileTabsOf(s);
-  // The command palette, with its first query while it's open: ">" for actions (⌘K), "" for files (Open Quickly, ⌘⇧O).
-  // File search reuses a displayed review file before opening Files.
+  // The command palette, with its first query while it's open: ">" for actions (⌘K), "" for files (Open Quickly, ⌘⇧O),
+  // "@" for terminal sessions (Terminal Sessions…). File search reuses a displayed review file before opening Files.
   const [palette, setPalette] = useState<string | null>(null);
   const openQuickly = (path: string) => {
     setPalette(null);
     openSourceFile(path);
+  };
+  // ADR 0049: a terminal session's workspace, in whichever project, with the session picked in the agent pane.
+  const openTerminalSession = async (session: TerminalSession) => {
+    if (!session.workspace) return;
+    const { id, projectId } = session.workspace;
+    setAgentPane(id, { picked: terminalPick(session), error: null });
+    setAgentsOpen(true);
+    if (projectId === current?.id) return void selectWorkspace(id);
+    await window.coxswain.setWorkspaceTabOpen(id, true);
+    await window.coxswain.openWorkspace(id);
+    await window.coxswain.openProject(projectId);
   };
   // A Guide link in the view's prose: to a thread by its label, this view's first, or to a section by its heading.
   const followGuideLink = (href: string) => {
@@ -1396,6 +1409,12 @@ export function App() {
       run: () => setPalette(""),
     },
     {
+      id: "terminal-sessions",
+      title: "Terminal Sessions…",
+      enabled: onMain,
+      run: () => setPalette("@"),
+    },
+    {
       id: "back",
       title: "Back",
       shortcut: "⌥⌘←",
@@ -1695,10 +1714,13 @@ export function App() {
 
       {palette !== null && (
         <CommandPalette
+          // Terminal Sessions… from the palette's own actions starts it again on "@".
+          key={palette}
           workspaceId={currentWorkspace?.id}
           actions={actions}
           initialQuery={palette}
           onOpen={openQuickly}
+          onTerminal={(session) => void openTerminalSession(session)}
           onClose={() => setPalette(null)}
         />
       )}

@@ -21,8 +21,18 @@ import {
   SpinnerIcon,
   SquarePenIcon,
   StopIcon,
+  TerminalIcon,
   XIcon,
 } from "./components/icons";
+import type { TerminalSession } from "../../core/terminal-sessions";
+import {
+  cantTake,
+  pickedTerminal,
+  terminalName,
+  terminalPick,
+  useTerminalSessions,
+} from "./terminal-sessions";
+import { TerminalPane } from "./TerminalPane";
 import { TextArea } from "./components/field";
 import { cn, divider, muted, noDrag, selectable, titleBar } from "./components/styles";
 import { count, shortDateTime } from "./format";
@@ -43,7 +53,46 @@ type Props = {
   composerPrompt?: { prompt: AttachedPrompt };
 };
 
-export function Agents({ workspace, onViewThread, composerPrompt }: Props) {
+// A terminal session picked in the header (ADR 0049) shows what was pushed to it instead; one that left stays shown
+// for a while, in case it connects again.
+export function Agents(props: Props) {
+  const { workspace } = props;
+  const { picked } = useAgentPane(workspace.id);
+  const terminals = useTerminalSessions().sessions.filter((s) => s.workspace?.id === workspace.id);
+  const agentSessions = useQuery(core("listAgentSessions", workspace.id)).data ?? [];
+  const terminalId = pickedTerminal(picked);
+  if (!terminalId) return <AgentChat {...props} terminals={terminals} />;
+  return (
+    <TerminalPane
+      workspaceId={workspace.id}
+      terminalId={terminalId}
+      session={terminals.find((s) => s.session === terminalId) ?? null}
+      header={(name) => (
+        <SessionPicker
+          sessions={agentSessions}
+          current={null}
+          terminals={terminals}
+          terminal={{ id: terminalId, name }}
+          agent="claude"
+          onPick={(id) => pickSession(workspace.id, id)}
+        />
+      )}
+    />
+  );
+}
+
+// The header's pick: an agent session becomes the workspace's current one; a terminal session is only shown.
+function pickSession(workspaceId: number, picked: string) {
+  setAgentPane(workspaceId, { picked, error: null });
+  if (!pickedTerminal(picked)) void window.coxswain.pickAgentSession(picked);
+}
+
+function AgentChat({
+  workspace,
+  onViewThread,
+  composerPrompt,
+  terminals,
+}: Props & { terminals: TerminalSession[] }) {
   const pane = useAgentPane(workspace.id);
   const patch = (change: Parameters<typeof setAgentPane>[1]) => setAgentPane(workspace.id, change);
   const { picked, newAgent, draft, attached, attachments, attaching } = pane;
@@ -219,11 +268,10 @@ export function Agents({ workspace, onViewThread, composerPrompt }: Props) {
         <SessionPicker
           sessions={sessions}
           current={session ?? null}
+          terminals={terminals}
+          terminal={null}
           agent={agent}
-          onPick={(picked) => {
-            patch({ picked, error: null });
-            void window.coxswain.pickAgentSession(picked);
-          }}
+          onPick={(picked) => pickSession(workspace.id, picked)}
         />
         <div className="flex-1" />
         <div className={cn("flex shrink-0 items-center text-neutral-500", noDrag)}>
@@ -449,28 +497,43 @@ export function Agents({ workspace, onViewThread, composerPrompt }: Props) {
 
 // The header's pick of agent session: a button naming the shown one, and a native menu (ADR 0004) of them all, each
 // by its title and when it started, with the new one not started yet at the bottom. Untitled until its first message.
+// Then a Terminal section (ADR 0049): the terminal sessions connected now that point at this workspace.
 function SessionPicker(props: {
   sessions: AgentSession[];
   current: AgentSession | null;
+  terminals: TerminalSession[];
+  // The terminal session shown, in place of an agent session; it may have left.
+  terminal: { id: string; name: string } | null;
   agent: Agent;
   onPick: (id: string) => void;
 }) {
-  const { sessions, current } = props;
+  const { sessions, current, terminals, terminal } = props;
   const agentName = (
     <span className={cn("shrink-0 text-xs", muted)}>
-      {agentNames[current?.agent ?? props.agent]}
+      {terminal ? "Terminal" : agentNames[current?.agent ?? props.agent]}
     </span>
   );
-  if (!sessions.length) return agentName;
-  const i = sessions.findIndex((s) => s.agentSessionId === current?.agentSessionId);
+  if (!sessions.length && !terminals.length && !terminal) return agentName;
+  const i = terminal ? -1 : sessions.findIndex((s) => s.agentSessionId === current?.agentSessionId);
   const name = (s: AgentSession, n: number) => s.title ?? `Session ${n + 1}`;
   const labels = sessions.map(
     (s, n) => `${name(s, n)} · ${agentNames[s.agent]} · ${shortDateTime(s.createdAt)}`,
   );
-  if (i < 0) labels.push("New session");
+  const fresh = i < 0 && !terminal;
+  if (fresh) labels.push("New session");
+  const first = labels.length;
+  labels.push(
+    ...terminals.map((s) => `${terminalName(s)}${cantTake(s) ? ` · ${cantTake(s)}` : ""}`),
+  );
+  const t = terminals.findIndex((s) => s.session === terminal?.id);
   const pick = async () => {
-    const n = await window.coxswain.showPickMenu(labels, i < 0 ? sessions.length : i);
+    const n = await window.coxswain.showPickMenu(
+      labels,
+      t >= 0 ? first + t : fresh ? sessions.length : i,
+      terminals.length ? { [first]: "Terminal" } : {},
+    );
     if (n < sessions.length) props.onPick(sessions[n].agentSessionId);
+    else if (n >= first) props.onPick(terminalPick(terminals[n - first]));
   };
   return (
     <>
@@ -479,7 +542,14 @@ function SessionPicker(props: {
         className={cn("flex min-w-0 items-center gap-1 px-1.5 py-1 text-xs font-semibold", noDrag)}
         onClick={pick}
       >
-        <span className="truncate">{i < 0 ? "New session" : name(sessions[i], i)}</span>
+        {terminal && (
+          <span className={cn("shrink-0", muted)}>
+            <TerminalIcon />
+          </span>
+        )}
+        <span className="truncate">
+          {terminal ? terminal.name : fresh ? "New session" : name(sessions[i], i)}
+        </span>
         <span className={cn("shrink-0", muted)}>
           <ChevronDownIcon />
         </span>

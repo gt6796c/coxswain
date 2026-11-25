@@ -20,7 +20,12 @@ type Pane = {
   pendingMessage: ChatEntry | null;
   beforeRevision: number;
   error: string | null;
+  // What was pushed to each terminal session from this pane (ADR 0049), by its id: coxswain sees nothing else of its
+  // conversation. state: sending, delivered, or why not.
+  // ponytail: kept for the window only, so a reload forgets them; the core could keep them if that matters.
+  pushes: Record<string, Push[]>;
 };
+export type Push = { text: string; state: "sending" | "delivered" | { error: string } };
 const empty: Pane = {
   picked: null,
   newAgent: null,
@@ -32,6 +37,7 @@ const empty: Pane = {
   pendingMessage: null,
   beforeRevision: -1,
   error: null,
+  pushes: {},
 };
 const panes = new Map<number, Pane>();
 const listeners = new Set<() => void>();

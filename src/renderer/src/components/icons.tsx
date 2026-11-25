@@ -265,6 +265,16 @@ export function SquarePenIcon() {
   );
 }
 
+// A terminal session (ADR 0049): >_
+export function TerminalIcon() {
+  return (
+    <Icon>
+      <path d="m4 17 6-6-6-6" />
+      <path d="M12 19h8" />
+    </Icon>
+  );
+}
+
 export function ArrowUpIcon() {
   return (
     <Icon>

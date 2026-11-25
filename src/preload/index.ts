@@ -508,9 +508,12 @@ const api = {
     url: string | null;
   }): Promise<"edit" | "delete"> => ipcRenderer.invoke("menus:comment", can),
   // A pick from a list (the agent pane's session, agent, model, effort): the index of the picked label. Pending if
-  // dismissed.
-  showPickMenu: (labels: string[], checked: number): Promise<number> =>
-    ipcRenderer.invoke("menus:pick", labels, checked),
+  // dismissed. sections: a titled section starting at a label, by its index.
+  showPickMenu: (
+    labels: string[],
+    checked: number,
+    sections?: Record<number, string>,
+  ): Promise<number> => ipcRenderer.invoke("menus:pick", labels, checked, sections),
   // A token's context menu in the canvas; stays pending if dismissed.
   showTokenMenu: (): Promise<"definition" | "usages"> => ipcRenderer.invoke("menus:token"),
   // A view's prose's context menu: Comment, or Copy; stays pending unless Comment is picked.

@@ -120,7 +120,7 @@ export async function startControl(db: Db, userData: string): Promise<Server | n
           );
       if (line.trim() === "sessions")
         return void import("./terminal-sessions.ts").then((t) =>
-          socket.end(`${t.sessionList()}\n`),
+          t.sessionList(db).then((list) => socket.end(`${list}\n`)),
         );
       if (line.startsWith("remove "))
         return void import("./terminal-tools.ts")

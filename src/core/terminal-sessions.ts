@@ -1,17 +1,25 @@
+import { execFile } from "node:child_process";
+import { realpath } from "node:fs/promises";
 import { homedir } from "node:os";
 import type { Socket } from "node:net";
+import { dirname } from "node:path";
 import type { Interface } from "node:readline";
+import { promisify } from "node:util";
+import type { Db } from "./db";
 import { emit } from "./events.ts";
+import { listProjects } from "./projects.ts";
+import type { WorkspacePick } from "./terminal-tools.ts";
 
 // ADR 0049: the terminal sessions connected to coxswain now, and coxswain pushing a message to one of them.
 //
 // A session's bridge (scripts/coxswain-mcp.mjs) keeps one connection open from when it starts, begun with the line
-// `session {"protocol", "session", "name", "cwd", "account", "route"}`. coxswain answers `ready`, then writes one JSON
-// object per line, `{"push": {"id", "text", "meta"}}`, and the bridge answers `{"ack": id}` once Claude Code has the
-// message, or `{"nack": id, "error"}`. The bridge also sends `{"name": …}` when the session names itself. A bridge on
-// another protocol is answered `outdated` instead, and stays listed, with pushes refused, until its session ends.
+// `session {"protocol", "session", "name", "cwd", "account", "route", "pick"}`. coxswain answers `ready`, then writes
+// one JSON object per line, `{"push": {"id", "text", "meta"}}`, and the bridge answers `{"ack": id}` once Claude Code
+// has the message, or `{"nack": id, "error"}`. The bridge also sends `{"name": …}` when the session names itself, and
+// `{"pick": …}` when use_workspace or remove_workspace changes its pick. A bridge on another protocol is answered
+// `outdated` instead, and stays listed, with pushes refused, until its session ends.
 //
-// Held in memory only: who is connected now. Every change emits "terminal-sessions".
+// Held in memory only: who is connected now, and where. Every change emits "terminal-sessions".
 
 export const terminalProtocol = 1;
 
@@ -26,6 +34,9 @@ export type TerminalSession = {
   // Its bridge speaks another protocol than this coxswain: restart the session to connect.
   outdated: boolean;
   since: Date;
+  // The workspace it points at, as its coxswain tools would open it: its use_workspace pick, else the branch checked
+  // out in its folder. null: no such workspace in coxswain (yet), or a folder outside its repositories.
+  workspace: { id: number; projectId: number; label: string } | null;
 };
 export type TerminalSessions = {
   sessions: TerminalSession[];
@@ -33,9 +44,14 @@ export type TerminalSessions = {
   settling: boolean;
 };
 
-type Live = TerminalSession & {
+type Live = Omit<TerminalSession, "workspace"> & {
   socket: Socket;
   acks: Map<number, (error: string | null) => void>;
+  pick: WorkspacePick | null;
+  // Its folder's repository (the main checkout's real path) and the branch checked out there, read when it connects.
+  // ponytail: a checkout in that folder later isn't seen until the session connects again; the bridge could say so.
+  repo: string | null;
+  branch: string | null;
 };
 
 const live = new Map<string, Live>();
@@ -43,22 +59,74 @@ const startedAt = Date.now();
 const settleMs = 12_000;
 let nextPush = 1;
 
-export function listTerminalSessions(): TerminalSessions {
-  return {
-    sessions: [...live.values()].map(({ session, name, cwd, account, route, outdated, since }) => ({
-      session,
-      name,
-      cwd,
-      account,
-      route,
-      outdated,
-      since,
+export async function listTerminalSessions(db: Db): Promise<TerminalSessions> {
+  const sessions = [...live.values()];
+  const projects = await Promise.all(
+    (await listProjects(db)).map(async (p) => ({
+      ...p,
+      real: p.path ? await realpath(p.path).catch(() => p.path) : null,
     })),
+  );
+  const workspaceOf = async (s: Live): Promise<TerminalSession["workspace"]> => {
+    const project = s.repo ? projects.find((p) => p.real === s.repo) : undefined;
+    const pick = s.pick ?? (s.branch ? { branch: s.branch } : null);
+    if (!project || !pick) return null;
+    const query = db
+      .selectFrom("workspaces")
+      .select(["id", "pr_number as prNumber", "branch"])
+      .where("project_id", "=", project.id);
+    const w = await (
+      "pr" in pick
+        ? query.where("pr_number", "=", pick.pr)
+        : query.where("branch", "=", pick.branch)
+    ).executeTakeFirst();
+    if (!w) return null;
+    const what = w.prNumber !== null ? `PR #${w.prNumber}` : (w.branch ?? "");
+    return { id: w.id, projectId: project.id, label: `${project.name}: ${what}` };
+  };
+  return {
+    sessions: await Promise.all(
+      sessions.map(async (s) => ({
+        session: s.session,
+        name: s.name,
+        cwd: s.cwd,
+        account: s.account,
+        route: s.route,
+        outdated: s.outdated,
+        since: s.since,
+        workspace: await workspaceOf(s),
+      })),
+    ),
     settling: Date.now() - startedAt < settleMs,
   };
 }
 
 const text = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : null);
+
+// use_workspace's pick as the bridge says it: { branch } or { pr }; anything else is none (the folder's branch).
+function pickOf(v: unknown): WorkspacePick | null {
+  if (!v || typeof v !== "object") return null;
+  const { branch, pr } = v as { branch?: unknown; pr?: unknown };
+  if (typeof branch === "string" && branch) return { branch };
+  if (typeof pr === "number" && Number.isInteger(pr)) return { pr };
+  return null;
+}
+
+// The folder's repository, by its main checkout, and the branch checked out in it.
+const run = promisify(execFile);
+async function locate(cwd: string): Promise<{ repo: string | null; branch: string | null }> {
+  const git = (...args: string[]) =>
+    run("git", args, { cwd }).then(
+      (r) => r.stdout.trim() || null,
+      () => null,
+    );
+  const [common, branch] = await Promise.all([
+    git("rev-parse", "--path-format=absolute", "--git-common-dir"),
+    git("symbolic-ref", "--short", "-q", "HEAD"),
+  ]);
+  const repo = common ? await realpath(dirname(common)).catch(() => dirname(common)) : null;
+  return { repo, branch };
+}
 
 export function serveSession(socket: Socket, lines: Interface, hello: string) {
   let said: Record<string, unknown>;
@@ -89,12 +157,19 @@ export function serveSession(socket: Socket, lines: Interface, hello: string) {
     since: new Date(),
     socket,
     acks: new Map(),
+    pick: pickOf(said.pick),
+    repo: null,
+    branch: null,
   };
   live.set(entry.session, entry);
   emit({ what: "terminal-sessions" });
+  void locate(entry.cwd).then((where) => {
+    Object.assign(entry, where);
+    if (live.get(entry.session) === entry) emit({ what: "terminal-sessions" });
+  });
   socket.write(outdated ? "outdated: restart this session to connect to coxswain\n" : "ready\n");
   lines.on("line", (line) => {
-    let msg: { ack?: unknown; nack?: unknown; error?: unknown; name?: unknown };
+    let msg: { ack?: unknown; nack?: unknown; error?: unknown; name?: unknown; pick?: unknown };
     try {
       msg = JSON.parse(line);
     } catch {
@@ -109,6 +184,10 @@ export function serveSession(socket: Socket, lines: Interface, hello: string) {
     const name = text(msg.name);
     if (name && name !== entry.name) {
       entry.name = name;
+      emit({ what: "terminal-sessions" });
+    }
+    if ("pick" in msg) {
+      entry.pick = pickOf(msg.pick);
       emit({ what: "terminal-sessions" });
     }
   });
@@ -132,7 +211,7 @@ export async function pushToSession(
   if (!text) throw new Error("nothing to send");
   const byId = live.get(to);
   const found = byId ? [byId] : [...live.values()].filter((s) => s.name === to);
-  if (found.length === 0) throw new Error(`no session ${to} is connected; ${sessionList()}`);
+  if (found.length === 0) throw new Error(`no session ${to} is connected; ${connected()}`);
   if (found.length > 1)
     throw new Error(
       `${found.length} sessions are named ${to} (${found.map((s) => `${s.session} in ${s.account}`).join(", ")}): say which by id`,
@@ -189,11 +268,17 @@ function stringMeta(meta: Record<string, unknown>): Record<string, string> {
 }
 
 // The control socket's `sessions` line.
-export function sessionList(): string {
-  const { sessions, settling } = listTerminalSessions();
+export async function sessionList(db: Db): Promise<string> {
+  const { sessions, settling } = await listTerminalSessions(db);
   if (sessions.length === 0)
     return settling ? "no sessions are connected yet" : "no sessions are connected";
   const one = (s: TerminalSession) =>
-    `${s.name ?? "(unnamed)"} ${s.session} in ${s.cwd} [${s.outdated ? "outdated" : s.route}, ${s.account}]`;
+    `${s.name ?? "(unnamed)"} ${s.session} in ${s.cwd} [${s.outdated ? "outdated" : s.route}, ${s.account}]${s.workspace ? ` on ${s.workspace.label}` : ""}`;
   return `connected: ${sessions.map(one).join("; ")}`;
+}
+
+// Who is connected, for an error that names the wrong one.
+function connected(): string {
+  const names = [...live.values()].map((s) => (s.name ? `${s.name} (${s.session})` : s.session));
+  return names.length ? `connected: ${names.join(", ")}` : "no sessions are connected";
 }
