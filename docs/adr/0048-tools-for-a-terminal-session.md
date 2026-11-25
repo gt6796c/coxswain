@@ -2,7 +2,8 @@
 
 ## Status
 
-Accepted. Carried in a fork, not proposed upstream. Builds on ADR 0047's control socket.
+Accepted. Carried in a fork, not proposed upstream. Builds on ADR 0047's control socket. ADR 0049 adds the other
+direction: which sessions are connected, and coxswain pushing a message to one.
 
 ## Context
 
@@ -80,7 +81,8 @@ coxswain's tools are served only to pane sessions, on a port that changes every 
 ## Consequences
 
 - The user comments as a note (the composer's toggle off Agent); Agent sends it to the pane's session instead. The
-  terminal session sees comments when asked (`read_review`): coxswain doesn't wake it, the user does.
+  terminal session sees comments when asked (`read_review`): coxswain doesn't wake it on its own; the user does, from
+  the terminal or with a push from coxswain (ADR 0049).
 - A reply on a session's finding gets no answer in coxswain until the session takes the comments; the reply box still
   reads "Ask the agent…".
 - A session in the user's own worktree needs adoption (ADR 0046); without it coxswain refuses a branch checked out
@@ -91,4 +93,4 @@ coxswain's tools are served only to pane sessions, on a port that changes every 
 - A directory not on this machine is refused; a remote session would name its repository's remote and branch instead.
 - A session that picked a workspace reads code from that workspace's folder, not its own directory; `use_workspace`'s
   answer is the only place that says so.
-- Not in the glossary, README or devlog, to keep the change to new files.
+- In the glossary as _Terminal session_ since the fork went its own way; the code still keeps to new files.
