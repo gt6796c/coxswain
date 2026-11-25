@@ -288,13 +288,13 @@ test("a session in the main checkout picks the branch to review with use_workspa
   await openTarget(db, { project: { path: repo }, branch: "spare" });
 
   // The main checkout is on the branch workspaces start from: nothing to review, and the error says what to do.
-  const session = bridge(repo, userData, "session-dd");
+  const session = bridge(repo, userData, "session-r");
   t.after(session.close);
   assert.ok((await session.names()).includes("use_workspace"));
   const onMain = `coxswain: ${repo} is on main, the branch svc's workspaces start from, so it has no changes to review. Call use_workspace with the branch or PR to review, or start the session in that branch's worktree.`;
   assert.deepEqual(await session.call("read_review"), { isError: true, text: onMain });
   // A name given before there's a workspace is kept for the connection use_workspace opens.
-  const naming = await session.call("set_session_name", { name: "backend-dd" });
+  const naming = await session.call("set_session_name", { name: "reviewer" });
   assert.equal(naming.isError, true);
   assert.match(naming.text, /The name is kept/);
 
@@ -344,7 +344,7 @@ test("a session in the main checkout picks the branch to review with use_workspa
   // A new bridge for the same Claude Code session (/mcp reconnect) carries on with its pick and name; another session's
   // starts over in its directory's branch.
   session.close();
-  const again = bridge(repo, userData, "session-dd");
+  const again = bridge(repo, userData, "session-r");
   t.after(again.close);
   await again.rpc("initialize");
   const after = await again.call("add_finding", {
@@ -374,7 +374,7 @@ test("a session in the main checkout picks the branch to review with use_workspa
   assert.equal(gone, undefined);
   assert.deepEqual(await again.call("read_review"), { isError: true, text: onMain });
   again.close();
-  const later = bridge(repo, userData, "session-dd");
+  const later = bridge(repo, userData, "session-r");
   t.after(later.close);
   assert.deepEqual(await later.call("read_review"), { isError: true, text: onMain });
 

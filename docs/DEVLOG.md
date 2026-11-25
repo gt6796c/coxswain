@@ -42,6 +42,7 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - PR workspace tabs now show the creator’s @login beside the PR number, in both native and fallback controls. The existing batched metadata query includes authors; the PR overview explicitly labels “Created by”. Missing authors retain the normal number/title fallback.
 
 - Validation: all 129 tests, typecheck, lint, formatting and production build pass. The disposable running-app check passes for creator labels, light/dark green thread surfaces, summaries, expansion and reopening.
+
 ## 2026-11-20 — Go to Definition and Find Usages for Go
 
 - Go files get Go to Definition and Find Usages through gopls, as installed (PATH, then `go env GOBIN`/`GOPATH`'s
@@ -53,22 +54,26 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - Tech debt: definitions in the standard library or module cache are outside the checkout and not listed (the same
   limit as a linked `node_modules`).
 - Validation: all 130 tests, typecheck, lint, formatting and production build pass.
+
 ## 2026-11-20 — COXSWAIN_HOME
 
 - `COXSWAIN_HOME` moves `~/coxswain` (clones, worktrees, checkouts, language servers); with `COXSWAIN_USER_DATA` it runs a second, separate coxswain, e.g. one per git identity. See ADR 0005 decision 6.
 - The folder is made on start and taken by its real path: git lists worktrees by theirs, so through a symlink (macOS's `/tmp`) coxswain wouldn't know its own worktrees and couldn't prune or remake them. A test names the folder through a symlink and fails without the real path.
 - No schema change. Two coxswains don't share clones or downloads.
+
 ## 2026-11-20 — Adopting the user's worktrees
 
 - With `COXSWAIN_ADOPT_WORKTREES` set, a local repository's branch checked out in one of the user's own worktrees is reviewed there instead of refused: coxswain's worktree path becomes a symlink to it. Never the repository's own checkout. See ADR 0046.
 - The link is checked on every open: a removed worktree or one switched to another branch drops it, and the workspace gets a worktree of coxswain's. Auto-update is turned off on every open of an adopted one, so coxswain never resets the user's work. Language servers get the real path.
 - A test covers off-by-default, adoption, the user switching branches there (fails if an existing link is trusted), and the main checkout staying refused. No schema change.
+
 ## 2026-11-20 — Agent folder
 
 - `COXSWAIN_AGENT_FOLDER` starts the agent pane's sessions in a folder of the checkout (a monorepo's `backend/`), so the agent loads that folder's instructions, skills and settings; the checkout goes in ACP's `additionalDirectories` and the pane instructions name the root, since coxswain's tools keep repository-relative paths. See ADR 0018 decision 14.
 - Background jobs, git, language servers and snapshots stay on the checkout. A folder that's missing, absolute or outside the checkout falls back to it. Tests cover both; the pane test fails with the folder disabled.
 - ponytail: one folder per run, from the environment (`agent-folder.ts`); choosing per session would need a picker in the pane and the folder stored with the session. Codex isn't told where the root is (its instructions are per adapter process).
 - No schema change.
+
 ## 2026-11-20 — Chat follows the latest message while at the end
 
 - The agent pane's transcript follows new content again, but only while the reader is at its end (within 24 px). Scrolled
@@ -81,6 +86,7 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   message): five growths in a row at the end stay at the end; scrolled up 400 px, new content moves the reader 0 px and
   shows _Latest_; _Latest_ returns to the end and following resumes.
 - No core or storage changes.
+
 ## 2026-11-21 — Remove Workspace with native tabs
 
 - The native workspace tabs (macOS 26 glass) have no context menu, and the bar's `remove-workspace` press had no button

@@ -18,6 +18,13 @@ const catalogFile = "terminal-tools.json";
 const cwd = process.cwd();
 
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
+
+const channelInstructions = [
+  "coxswain, the review app the user reads code in, may send you messages as <channel> events from this server.",
+  "Each one is the user asking something of you from coxswain, for example to review lines they selected or to take the",
+  "replies waiting on your findings. Act on it as you would on the user's own message. When it names a thread, a file",
+  "or lines, answer in coxswain with its tools (reply_to_thread, add_finding); otherwise answer here.",
+].join(" ");
 const real = (path) => {
   try {
     return realpathSync(path);
@@ -168,6 +175,7 @@ async function call(message) {
     if (message.params?.name === "set_session_name" && !reply.result?.isError) {
       named = message.params.arguments;
       saveState();
+      listener?.write(`${JSON.stringify({ name: named.name })}\n`);
     }
     // The app closes the connection; a pick kept would open the removed workspace again.
     if (message.params?.name === "remove_workspace" && !reply.result?.isError) {
@@ -189,6 +197,87 @@ async function call(message) {
       true,
     );
   }
+}
+
+// Terminal comms spike: a connection kept open from the start, on which coxswain pushes messages to this session
+// (src/core/terminal-sessions.ts). Each push goes to Claude Code as a channel event, which only arrives when the session
+// was started with --dangerously-load-development-channels server:coxswain; otherwise Claude Code drops it silently.
+// The ack says only that the bridge handed it on. Reconnects every few seconds while coxswain isn't there.
+let listener = null;
+function listen(delay = 1000) {
+  if (!sessionId) return;
+  const socket = connect(join(userData, "control.sock"));
+  let ready = false;
+  let replaced = false;
+  socket.on("error", () => {});
+  socket.on("close", () => {
+    if (listener === socket) listener = null;
+    if (replaced) return; // another bridge for this session took over
+    setTimeout(
+      () => listen(ready ? 1000 : Math.min(delay * 2, 10000)),
+      ready ? 1000 : delay,
+    ).unref();
+  });
+  socket.on("connect", () =>
+    socket.write(`session ${JSON.stringify({ session: sessionId, name: named?.name, cwd })}\n`),
+  );
+  createInterface({ input: socket })
+    .on("error", () => {})
+    .on("line", (line) => {
+      if (!ready) {
+        if (line !== "ready") return socket.destroy();
+        ready = true;
+        listener = socket;
+        return;
+      }
+      if (line === "replaced") return void (replaced = true);
+      let msg;
+      try {
+        msg = JSON.parse(line);
+      } catch {
+        return;
+      }
+      if (!msg.push) return;
+      const { id, text, meta } = msg.push;
+      deliver(id, text, meta ?? {}).then(
+        () => socket.write(`${JSON.stringify({ ack: id })}\n`),
+        (e) => socket.write(`${JSON.stringify({ nack: id, error: e.message })}\n`),
+      );
+    });
+}
+
+// Into the session: as a channel event when the session was started as one (COXSWAIN_PUSH=channel; Claude Code drops
+// channel events silently where an org's policy blocks channels, so the bridge can't find out by trying), else as a
+// message on the session's own inbox socket, which every interactive session since v2.1.224 has. The session reads it
+// between tool calls, or starts a turn with it when idle, shown as a message from another session.
+// ponytail: the socket's frame ({"type":"user",…} after the documented auth line) is from Claude Code's own example,
+// not its docs. Upgrade: choose the channel automatically once there's a way to see it's registered.
+function deliver(id, text, meta) {
+  if (process.env.COXSWAIN_PUSH === "channel") {
+    send({
+      jsonrpc: "2.0",
+      method: "notifications/claude/channel",
+      params: { content: text, meta: { ...meta, push_id: String(id) } },
+    });
+    return Promise.resolve();
+  }
+  const inbox = process.env.CLAUDE_CODE_MESSAGING_SOCKET;
+  if (!inbox)
+    return Promise.reject(
+      new Error("the session has no inbox socket (Claude Code before v2.1.224?)"),
+    );
+  const about = Object.entries(meta)
+    .map(([k, v]) => `${k}=${v}`)
+    .join(" ");
+  const content = `From coxswain, sent by the user${about ? ` (${about})` : ""}:\n${text}`;
+  const token = process.env.CLAUDE_CODE_MESSAGING_TOKEN;
+  return new Promise((done, fail) => {
+    const s = connect(inbox, () => {
+      if (token) s.write(`${JSON.stringify({ type: "auth", token })}\n`);
+      s.end(`${JSON.stringify({ type: "user", message: { role: "user", content } })}\n`, done);
+    });
+    s.on("error", fail);
+  });
 }
 
 // The app rewrites the catalog when it starts or adds a repository: tell the session its tools may have changed.
@@ -214,12 +303,17 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
   if (message.id === undefined) return; // a notification
   const result = (r) => send({ jsonrpc: "2.0", id: message.id, result: r });
   switch (message.method) {
-    case "initialize":
+    case "initialize": {
+      // Claude Code doesn't take a server on MCP revision 2026-07-28 or later as a channel: stay on an earlier one.
+      const asked = message.params?.protocolVersion;
+      if (!listener) listen();
       return result({
-        protocolVersion: message.params?.protocolVersion ?? "2025-06-18",
-        capabilities: { tools: { listChanged: true } },
+        protocolVersion: typeof asked === "string" && asked < "2025-06-18" ? asked : "2025-06-18",
+        capabilities: { tools: { listChanged: true }, experimental: { "claude/channel": {} } },
         serverInfo: { name: "coxswain", version: "0" },
+        instructions: channelInstructions,
       });
+    }
     case "ping":
       return result({});
     case "tools/list": {

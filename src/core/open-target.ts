@@ -105,7 +105,23 @@ export async function startControl(db: Db, userData: string): Promise<Server | n
         return void import("./terminal-tools.ts").then((t) =>
           t.serveTerminal(db, userData, socket, lines, line.slice(4)),
         );
+      // Terminal comms spike: a session's standing connection, and pushing to one.
+      if (line.startsWith("session "))
+        return void import("./terminal-sessions.ts").then((t) =>
+          t.serveSession(socket, lines, line.slice(8)),
+        );
       lines.close();
+      if (line.startsWith("push "))
+        return void import("./terminal-sessions.ts")
+          .then((t) => t.pushToSession(line.slice(5)))
+          .then(
+            (pushed) => socket.end(`${pushed}\n`),
+            (e: Error) => socket.end(`error: ${e.message}\n`),
+          );
+      if (line.trim() === "sessions")
+        return void import("./terminal-sessions.ts").then((t) =>
+          socket.end(`${t.sessionList()}\n`),
+        );
       if (line.startsWith("remove "))
         return void import("./terminal-tools.ts")
           .then((t) => t.removeBranch(db, line.slice(7)))
