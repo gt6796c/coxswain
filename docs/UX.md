@@ -223,7 +223,7 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   says why (_Restart this session to connect_, _No inbox: Claude Code before 2.1.224_). For a few seconds after
   coxswain starts the list says _Sessions are reconnecting…_ above whatever has come back. Enter on one opens its
   workspace with that session picked in the agent pane; on one with no workspace, it does nothing but show why.
-  Typing `@` in the palette goes straight to that list.
+  Typing `@` in the palette goes straight to that list, also right after the `>` ⌘K starts with.
 
   _View > Back_ (⌥⌘←) and _View > Forward_ (⌥⌘→), or the chevrons in the canvas bar, step through what the canvas
   showed (ADR 0025): each whole file opened (from _Files_, Open Quickly, Go to Definition or Find Usages), each file

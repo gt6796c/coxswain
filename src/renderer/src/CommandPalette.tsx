@@ -112,7 +112,8 @@ export function CommandPalette(props: {
           value={query}
           placeholder="Open a file in the workspace, type > for actions or @ for terminal sessions"
           onChange={(e) => {
-            setQuery(e.target.value);
+            // ⌘K starts on ">": an @ typed right after it means the terminal sessions, not an action named "@".
+            setQuery(e.target.value.replace(/^>@/, "@"));
             setCurrent(0);
           }}
           onKeyDown={(e) => {
