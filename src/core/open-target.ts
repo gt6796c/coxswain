@@ -113,7 +113,7 @@ export async function startControl(db: Db, userData: string): Promise<Server | n
       lines.close();
       if (line.startsWith("push "))
         return void import("./terminal-sessions.ts")
-          .then((t) => t.pushToSession(line.slice(5)))
+          .then((t) => t.pushLine(line.slice(5)))
           .then(
             (pushed) => socket.end(`${pushed}\n`),
             (e: Error) => socket.end(`error: ${e.message}\n`),

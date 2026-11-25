@@ -47,6 +47,7 @@ import type { SetupCheck } from "../core/setup";
 import type { Workspace } from "../core/workspaces";
 import type { AgentCommand, AgentStatus, SessionState } from "../core/session-state";
 import type { CoreEvent } from "../core/events";
+import type { TerminalSessions } from "../core/terminal-sessions";
 import type { GuideAuthor } from "../shared/guide-authors";
 import type { Job } from "../core/jobs";
 
@@ -234,6 +235,10 @@ const api = {
   // Each workspace's agent status, left out when idle; seeAgentSessions clears its finished turns' "done".
   listAgentStatuses: (): Promise<Record<number, AgentStatus>> =>
     ipcRenderer.invoke("agents:statuses"),
+  // ADR 0049: the terminal sessions connected now; a push resolves once the session's Claude Code has the message.
+  listTerminalSessions: (): Promise<TerminalSessions> => ipcRenderer.invoke("terminal:sessions"),
+  pushToSession: (to: string, text: string, meta?: Record<string, string>): Promise<string> =>
+    ipcRenderer.invoke("terminal:push", to, text, meta),
   seeAgentSessions: (workspaceId: number): Promise<void> =>
     ipcRenderer.invoke("agents:seen", workspaceId),
   onAgentState: (callback: (id: string, state: SessionState) => void) => {

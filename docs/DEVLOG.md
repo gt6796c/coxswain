@@ -3,6 +3,22 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-11-25 — Terminal sessions connect to coxswain, and coxswain can push to one
+
+- [ADR 0049](adr/0049-pushing-to-a-terminal-session.md): a terminal session's bridge connects to coxswain when the
+  session starts and stays connected, saying its id, name, Claude account, folder, route and protocol. The core keeps
+  them in memory (`src/core/terminal-sessions.ts`), emits `terminal-sessions` on every change, and serves
+  `listTerminalSessions` and `pushToSession` to the UI; the control socket takes `sessions` and `push {"to", "text",
+"meta"}`. No UI yet.
+- A push reaches the session through its inbox socket (cross-session messaging, Claude Code 2.1.224+), or as a channel
+  event when Claude Code was started with the bridge named in a channel flag. Checked live on both routes.
+- A bridge on another protocol stays listed as one to restart; a push to it, or to a session with no route, is refused
+  at once with why. Bridges reconnect after 1 s, then 2, 4, 8 and 10 s, when coxswain restarts.
+- `ponytail:` the inbox frame is Claude Code's own example, not its docs; the session's name falls back to the
+  undocumented `<config>/sessions/<pid>.json`. Both are marked in the bridge.
+- Tests cover both routes, a session with neither, an outdated bridge, the name from Claude Code's file, two sessions
+  with one name, and reconnecting.
+
 ## 2026-11-24 — A requested Guide's threads are checked when the code moves on
 
 - A requested Guide (a review) is kept when the code changes, so it missed the thread check an automatic update now does, and a review's findings stayed open after the fix landed. In place of the update, the Guide session now only checks the open threads against the new range and resolves the fixed ones (`publish_guide` with no sections), leaving the review's sections as written. Once per range, and only with a thread open. The progress line says "Checking review threads…", the out-of-date banner keeps Refresh Guide available, and a failed check offers no Retry, which would replace the review. ADR 0023.

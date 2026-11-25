@@ -44,7 +44,7 @@ inbox socket is the way in for nearly every session.
    (`claude mcp add -s user`). This connection only says the session is there; tool calls keep their own
    (ADR 0048 point 3), and connecting opens no workspace.
 2. **Sessions are core state** (`src/core/terminal-sessions.ts`), in memory: who is connected now, nothing stored.
-   Connecting, leaving, being renamed and taking or failing a push emit a core event (ADR 0017), and the UI lists the
+   Connecting, leaving and being renamed emit a core event (ADR 0017), and the UI lists the
    sessions with their name, account, folder and the workspace their tool calls go to (their `use_workspace` pick, else
    their folder's branch), or none yet. Where the list goes is UX.md's, when it is built.
 3. **A session is addressed by its id.** Its name (`set_session_name`, ADR 0048 point 7) is what the UI shows; the bridge
@@ -53,8 +53,9 @@ inbox socket is the way in for nearly every session.
    Two sessions with the same name, in two accounts, are told apart by account. A control line `push {"to": …}` takes a
    name only when one connected session has it.
 4. **The bridge picks the route once, when it starts:**
-   - `channel` when Claude Code's command line (its parent process) names this server in `--channels` or
-     `--dangerously-load-development-channels`: the user asked for it for this session;
+   - `channel` when Claude Code's command line (its parent process) names this server (`coxswain`, or the name in
+     `COXSWAIN_MCP_NAME` for a dev run's) in `--channels` or `--dangerously-load-development-channels`: the user asked
+     for it for this session;
    - else `inbox` when `CLAUDE_CODE_MESSAGING_SOCKET` is set;
    - else `none`: the session is listed, and a push to it is refused with why (Claude Code before 2.1.224).
 
@@ -80,9 +81,9 @@ inbox socket is the way in for nearly every session.
    didn't connect, so it pushes only to sessions started with coxswain's bridge.
 9. **The hello says which protocol the bridge speaks**, a number raised whenever the lines on this connection change.
    A session keeps the bridge it started with, even after coxswain is updated, so a long-running session may speak an
-   older one. coxswain lists a bridge it can't serve as "restart this session to connect" instead of turning it away
-   unseen, and answers `error: …` so the bridge stops trying. A hello with no number is from the spike, and gets the
-   same.
+   older one. coxswain answers a bridge it can't serve `outdated` instead of `ready` and keeps the connection, so the
+   session is listed as one to restart while it runs, and a push to it is refused with that. A hello with no number is
+   from the spike, and gets the same.
 
 ## Alternatives considered
 

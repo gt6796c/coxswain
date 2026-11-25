@@ -80,6 +80,7 @@ import {
   type Appearance,
 } from "../core/appearance";
 import { openDatabase } from "../core/db";
+import { listTerminalSessions, pushToSession } from "../core/terminal-sessions";
 import {
   prepareAttachments,
   attachmentImage,
@@ -639,6 +640,11 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("agents:state", (_, agentSessionId: string) => readAgentState(db, agentSessionId));
   ipcMain.handle("agents:statuses", () => listAgentStatuses(db));
+  // ADR 0049: terminal sessions connected through their bridge, and pushing a message to one.
+  ipcMain.handle("terminal:sessions", () => listTerminalSessions());
+  ipcMain.handle("terminal:push", (_, to: string, text: string, meta?: Record<string, string>) =>
+    pushToSession(to, text, meta),
+  );
   ipcMain.handle("agents:seen", (_, workspaceId: number) => seeAgentSessions(db, workspaceId));
   // Coalesce token bursts; all windows can reattach to the same core-owned session state.
   // ponytail: each notification carries the full transcript; use versioned entry deltas if long

@@ -53,6 +53,7 @@ export function startBackground(db: Db) {
             "workspaces",
             "commands",
             "guide-state",
+            "terminal-sessions",
           ),
         },
         () => {},

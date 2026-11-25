@@ -146,6 +146,8 @@ const affects: Record<Changed["what"], Reads[]> = {
   workspaces: ["listWorkspaces", "getClosedWorkspaceTabs", "getAutoUpdate"],
   // An agent sent its slash commands for one of its sessions.
   commands: ["agentCommands"],
+  // ADR 0049: a terminal session connected, left or was renamed.
+  "terminal-sessions": ["listTerminalSessions"],
   settings: [
     "getUiPreferences",
     "getAppearance",

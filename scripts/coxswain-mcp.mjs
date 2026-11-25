@@ -19,12 +19,45 @@ const cwd = process.cwd();
 
 const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 
-const channelInstructions = [
-  "coxswain, the review app the user reads code in, may send you messages as <channel> events from this server.",
-  "Each one is the user asking something of you from coxswain, for example to review lines they selected or to take the",
-  "replies waiting on your findings. Act on it as you would on the user's own message. When it names a thread, a file",
-  "or lines, answer in coxswain with its tools (reply_to_thread, add_finding); otherwise answer here.",
-].join(" ");
+// ADR 0049: how coxswain's messages reach this session, picked once now. A channel only when Claude Code was started
+// with this server named in --channels or --dangerously-load-development-channels (an organization's policy may still
+// drop its events, and nothing here can tell); else the session's inbox socket; else none.
+// The name this server is registered under: `coxswain`, or COXSWAIN_MCP_NAME for another (a dev run's).
+const serverName = process.env.COXSWAIN_MCP_NAME || "coxswain";
+const account = process.env.CLAUDE_CONFIG_DIR || join(homedir(), ".claude");
+function pickRoute() {
+  let args = [];
+  try {
+    args = execFileSync("ps", ["-o", "args=", "-p", String(process.ppid)], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).split(/[\s,]+/);
+  } catch {}
+  const flagged = args.some(
+    (a) => a === "--channels" || a === "--dangerously-load-development-channels",
+  );
+  const named = args.some(
+    (a) => a === `server:${serverName}` || a.startsWith(`plugin:${serverName}@`),
+  );
+  if (flagged && named) return "channel";
+  return process.env.CLAUDE_CODE_MESSAGING_SOCKET ? "inbox" : "none";
+}
+const route = pickRoute();
+
+const pushInstructions =
+  route === "channel"
+    ? [
+        "coxswain, the review app the user reads code in, may send you messages as <channel> events from this server.",
+        "Each one is the user asking something of you from coxswain, for example to review lines they selected or to take",
+        "the replies waiting on your findings. Act on it as you would on the user's own message. When it names a thread, a",
+        "file or lines, answer in coxswain with its tools (reply_to_thread, add_finding); otherwise answer here.",
+      ].join(" ")
+    : [
+        "coxswain, the review app the user reads code in, may send you a message that starts 'From coxswain, sent by the",
+        "user'. It arrives as a message from another session, because that's the way in coxswain has; it is a request the",
+        "user made in coxswain, for example to review lines they selected or to take the replies waiting on your findings.",
+        "When it names a thread, a file or lines, answer in coxswain with its tools (reply_to_thread, add_finding).",
+      ].join(" ");
 const real = (path) => {
   try {
     return realpathSync(path);
@@ -199,37 +232,61 @@ async function call(message) {
   }
 }
 
-// Terminal comms spike: a connection kept open from the start, on which coxswain pushes messages to this session
-// (src/core/terminal-sessions.ts). Each push goes to Claude Code as a channel event, which only arrives when the session
-// was started with --dangerously-load-development-channels server:coxswain; otherwise Claude Code drops it silently.
-// The ack says only that the bridge handed it on. Reconnects every few seconds while coxswain isn't there.
+// ADR 0049: a connection kept open from the start, which tells coxswain this session is here and on which coxswain
+// pushes messages to it (src/core/terminal-sessions.ts). The ack says Claude Code has the message, not that it was read.
+// While coxswain isn't there, it tries again after 1 s, then 2, 4, 8 and every 10 s.
+const protocol = 1;
 let listener = null;
-function listen(delay = 1000) {
+let initialized = false; // listen() keeps itself going from the first initialize on
+
+// The session's name as Claude Code keeps it (ListAgents' name), when it hasn't named itself with set_session_name.
+// ponytail: <config>/sessions/<pid>.json isn't documented; read once per connection, and nothing breaks without it.
+function registryName() {
+  try {
+    const entry = JSON.parse(
+      readFileSync(join(account, "sessions", `${process.ppid}.json`), "utf8"),
+    );
+    return typeof entry.name === "string" && entry.name.trim() ? entry.name.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
+function listen(wait = 1000) {
   if (!sessionId) return;
   const socket = connect(join(userData, "control.sock"));
-  let ready = false;
+  let answered = false;
   let replaced = false;
   socket.on("error", () => {});
   socket.on("close", () => {
     if (listener === socket) listener = null;
     if (replaced) return; // another bridge for this session took over
-    setTimeout(
-      () => listen(ready ? 1000 : Math.min(delay * 2, 10000)),
-      ready ? 1000 : delay,
-    ).unref();
+    const next = answered ? 1000 : Math.min(wait * 2, 10000);
+    setTimeout(() => listen(next), next).unref();
   });
-  socket.on("connect", () =>
-    socket.write(`session ${JSON.stringify({ session: sessionId, name: named?.name, cwd })}\n`),
-  );
+  socket.on("connect", () => {
+    const hello = {
+      protocol,
+      session: sessionId,
+      name: named?.name ?? registryName(),
+      cwd,
+      account,
+      route,
+    };
+    socket.write(`session ${JSON.stringify(hello)}\n`);
+  });
   createInterface({ input: socket })
     .on("error", () => {})
     .on("line", (line) => {
-      if (!ready) {
-        if (line !== "ready") return socket.destroy();
-        ready = true;
-        listener = socket;
+      if (!answered) {
+        // "outdated": this coxswain speaks another protocol. Stay connected, so the session is listed as one to
+        // restart, and take no pushes.
+        if (line !== "ready" && !line.startsWith("outdated")) return socket.destroy();
+        answered = true;
+        if (line === "ready") listener = socket;
         return;
       }
+      if (listener !== socket && line !== "replaced") return;
       if (line === "replaced") return void (replaced = true);
       let msg;
       try {
@@ -246,14 +303,13 @@ function listen(delay = 1000) {
     });
 }
 
-// Into the session: as a channel event when the session was started as one (COXSWAIN_PUSH=channel; Claude Code drops
-// channel events silently where an org's policy blocks channels, so the bridge can't find out by trying), else as a
-// message on the session's own inbox socket, which every interactive session since v2.1.224 has. The session reads it
-// between tool calls, or starts a turn with it when idle, shown as a message from another session.
+// Into the session by its route: a channel event, or a message on the session's own inbox socket, which every
+// interactive session since v2.1.224 has. The session reads it between tool calls, or starts a turn with it when idle,
+// shown as a message from another session.
 // ponytail: the socket's frame ({"type":"user",…} after the documented auth line) is from Claude Code's own example,
-// not its docs. Upgrade: choose the channel automatically once there's a way to see it's registered.
+// not its docs. Upgrade: the documented frame, once there is one.
 function deliver(id, text, meta) {
-  if (process.env.COXSWAIN_PUSH === "channel") {
+  if (route === "channel") {
     send({
       jsonrpc: "2.0",
       method: "notifications/claude/channel",
@@ -306,12 +362,18 @@ createInterface({ input: process.stdin }).on("line", async (line) => {
     case "initialize": {
       // Claude Code doesn't take a server on MCP revision 2026-07-28 or later as a channel: stay on an earlier one.
       const asked = message.params?.protocolVersion;
-      if (!listener) listen();
+      if (!initialized) {
+        initialized = true;
+        listen();
+      }
       return result({
         protocolVersion: typeof asked === "string" && asked < "2025-06-18" ? asked : "2025-06-18",
-        capabilities: { tools: { listChanged: true }, experimental: { "claude/channel": {} } },
+        capabilities: {
+          tools: { listChanged: true },
+          ...(route === "channel" ? { experimental: { "claude/channel": {} } } : {}),
+        },
         serverInfo: { name: "coxswain", version: "0" },
-        instructions: channelInstructions,
+        instructions: pushInstructions,
       });
     }
     case "ping":
