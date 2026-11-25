@@ -89,6 +89,12 @@ inbox socket is the way in for nearly every session.
   which workspace a session works on, and would let coxswain push into sessions that never opted in.
 - **Waking the session per comment** (forwarding each reply as the user writes it): rejected in ADR 0048 point 7 for the
   same reason, the session reacts to each before the user has finished.
+- **Pushing instead of the agent pane's ACP sessions** (ADR 0018), so coxswain has one way to talk to agents: a push is
+  text into a session coxswain doesn't run. coxswain doesn't see the reply stream, the tool calls, permission requests
+  or where a turn ends, so it couldn't cancel, steer, queue, show agent status or take a turn diff; the answer comes back
+  only if the session writes it with coxswain's tools. Both ways in are Claude Code's, so Codex and Gemini would be lost.
+  The two stay side by side behind one entry point instead: what is sent to an agent (an ask, a question, "Review this
+  with…") goes to the pane's session over ACP or to a connected terminal session as a push, whichever the user picks.
 
 ## Consequences
 
