@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed. Carried in the fork. Extends ADR 0048 (the tools a terminal session pulls) with the other direction: coxswain
+Accepted. Carried in the fork. Extends ADR 0048 (the tools a terminal session pulls) with the other direction: coxswain
 knows which terminal sessions are running and sends one a message. A spike is on `feat/terminal-channel` (71a9f25).
 
 ## Context
