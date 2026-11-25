@@ -415,7 +415,9 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   _Send to agent_ (listed as its text or _Thread N_), _Submit Review › Send to Agent_ (_Review · N threads_) and a
   failed check's _Send to Agent_ (_Check · name failed_); the pane opens to show it go. A thread sent there is the
   session's from then on: later replies in it wait for the session, which answers in the thread with coxswain's tools,
-  and nothing shows in the thread until it does, unless the push failed. When it disconnects, the pane says so and the composer is disabled until it
+  and nothing shows in the thread until it does, unless the push failed. The pane doesn't list the threads the session
+  wrote (the canvas has them) or say whether it is busy (only Claude Code's undocumented session file knows), and a
+  push doesn't wait for it to be idle: Claude Code hands it over between tool calls, or as a new turn. When it disconnects, the pane says so and the composer is disabled until it
   connects again; a session that hasn't come back after 30 seconds drops from the picker, and the pane goes back to
   the workspace's current agent session.
 
@@ -477,9 +479,6 @@ A prose-only view has no reviewable files. An empty view says _Nothing in this v
 6. **The canvas:** what else it shows (the PR's history), and how the agent and the human switch
    between them. An annotation on lines is an entry (ADR 0023); the agent has tools to make views (ADR 0026), but not
    yet to navigate the app or read its context. Interactive views (Excalidraw and the like) are deferred.
-7. **A terminal session in L4:** the pane shows only what was pushed to it, since coxswain can't see its
-   conversation. Should it also show the threads it wrote, or its busy/idle state (Claude Code's undocumented session
-   file has it)? Does a push wait while it's busy, or go in between its tool calls as Claude Code delivers it?
 
 ## Continuity when navigating
 
