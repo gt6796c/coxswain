@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { match, P } from "ts-pattern";
 import type { TerminalSession } from "../../core/terminal-sessions";
-import { type Push, setAgentPane, useAgentPane } from "./agent-pane";
+import { setAgentPane, trackPush, useAgentPane } from "./agent-pane";
 import { TextArea } from "./components/field";
 import { ArrowUpIcon } from "./components/icons";
 import { cn, divider, muted, titleBar } from "./components/styles";
@@ -37,23 +37,13 @@ export function TerminalPane(props: {
   const refused = session
     ? cantTake(session)
     : `${name} disconnected. Waiting for it to connect again…`;
-  const record = (change: (before: Push[]) => Push[]) =>
-    setAgentPane(workspaceId, (before) => ({
-      pushes: { ...before.pushes, [terminalId]: change(before.pushes[terminalId] ?? []) },
-    }));
   const send = async () => {
     const text = draft.trim();
     if (!text || refused) return;
     setDraft("");
-    const push: Push = { text, state: "sending" };
-    record((before) => [...before, push]);
-    const state: Push["state"] = await window.coxswain.pushToSession(terminalId, text).then(
-      () => "delivered" as const,
-      (e: Error) => ({
-        error: e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ""),
-      }),
+    await trackPush(workspaceId, terminalId, text, () =>
+      window.coxswain.pushToSession(terminalId, text),
     );
-    record((before) => before.map((p) => (p === push ? { ...p, state } : p)));
   };
 
   return (

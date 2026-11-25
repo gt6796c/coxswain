@@ -8,8 +8,8 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
 - [ADR 0049](adr/0049-pushing-to-a-terminal-session.md): a terminal session's bridge connects to coxswain when the
   session starts and stays connected, saying its id, name, Claude account, folder, route and protocol. The core keeps
   them in memory (`src/core/terminal-sessions.ts`), emits `terminal-sessions` on every change, and serves
-  `listTerminalSessions` and `pushToSession` to the UI; the control socket takes `sessions` and `push {"to", "text",
-  "meta"}`.
+  `listTerminalSessions` and `pushToSession` to the UI; the control socket takes `sessions` and
+  `push {"to", "text", "meta"}`.
 - A push reaches the session through its inbox socket (cross-session messaging, Claude Code 2.1.224+), or as a channel
   event when Claude Code was started with the bridge named in a channel flag. Checked live on both routes.
 - A bridge on another protocol stays listed as one to restart; a push to it, or to a session with no route, is refused
@@ -24,9 +24,15 @@ Where the build stands and what we owe. Newest entry first. Terms are defined in
   ends with a _Terminal_ section; picking one shows what was pushed to it from the pane, each _Delivered_ or why not,
   and the composer pushes to it. ⌘K's _Terminal Sessions…_ (or `@` in the palette) lists them all, across projects,
   and opens one's workspace with it picked. A test covers the pick and the folder's branch.
-- Still to do: comments sent from the canvas go to the agent session, not a picked terminal session.
+- What the canvas sends to the agent goes to the terminal session the agent pane shows, when it shows one, as a push
+  (`src/core/terminal-sends.ts`): a question or a thread's _Send to agent_, _Submit Review › Send to Agent_, a failed
+  check's _Send to Agent_. The session must be on the same workspace, since its tools answer there. A question is
+  pushed with its whole thread and the thread id for `reply_to_thread`, and the thread is the session's from then on
+  (ADR 0048 point 7), so later replies wait for it; one not delivered becomes a note again. The pane lists each push
+  with the rest. A test covers each kind, a refused push and a session on another workspace.
 - `ponytail:` the pane's pushes are kept for the window only, so a reload forgets them; a branch checked out in a
-  session's folder after it connected isn't seen until it connects again.
+  session's folder after it connected isn't seen until it connects again; a thread sent to a terminal session shows
+  nothing in the canvas until it replies (the pane says _Delivered_).
 
 ## 2026-11-24 — A requested Guide's threads are checked when the code moves on
 

@@ -48,6 +48,7 @@ import type { Workspace } from "../core/workspaces";
 import type { AgentCommand, AgentStatus, SessionState } from "../core/session-state";
 import type { CoreEvent } from "../core/events";
 import type { TerminalSessions } from "../core/terminal-sessions";
+import type { CanvasSend } from "../core/terminal-sends";
 import type { GuideAuthor } from "../shared/guide-authors";
 import type { Job } from "../core/jobs";
 
@@ -239,6 +240,9 @@ const api = {
   listTerminalSessions: (): Promise<TerminalSessions> => ipcRenderer.invoke("terminal:sessions"),
   pushToSession: (to: string, text: string, meta?: Record<string, string>): Promise<string> =>
     ipcRenderer.invoke("terminal:push", to, text, meta),
+  // What the canvas sends to the agent, pushed to the terminal session the agent pane shows instead.
+  sendToTerminal: (to: string, what: CanvasSend): Promise<void> =>
+    ipcRenderer.invoke("terminal:send", to, what),
   seeAgentSessions: (workspaceId: number): Promise<void> =>
     ipcRenderer.invoke("agents:seen", workspaceId),
   onAgentState: (callback: (id: string, state: SessionState) => void) => {

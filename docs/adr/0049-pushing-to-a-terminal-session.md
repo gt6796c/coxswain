@@ -37,8 +37,8 @@ inbox socket is the way in for nearly every session.
 
 1. **A session is connected from when it starts.** Its bridge (ADR 0048) connects to `<userData>/control.sock` when
    Claude Code initializes it, not at its first tool call, and keeps that connection open:
-   `session {"protocol": 1, "session": <CLAUDE_CODE_SESSION_ID>, "name": …, "cwd": …, "account": …, "route": …,
-   "pick": …}` (`protocol`: point 9; `pick`: point 2). coxswain answers
+   `session {"protocol": 1, "session": <CLAUDE_CODE_SESSION_ID>, "name": …, "cwd": …, "account": …, "route": …, "pick": …}`
+   (`protocol`: point 9; `pick`: point 2). coxswain answers
    `ready`. `account` is the Claude Code config folder it runs under (`CLAUDE_CONFIG_DIR`, else `~/.claude`), so one
    coxswain serves sessions of several Claude accounts; each account registers the bridge once
    (`claude mcp add -s user`). This connection only says the session is there; tool calls keep their own
@@ -87,6 +87,13 @@ inbox socket is the way in for nearly every session.
    older one. coxswain answers a bridge it can't serve `outdated` instead of `ready` and keeps the connection, so the
    session is listed as one to restart while it runs, and a push to it is refused with that. A hello with no number is
    from the spike, and gets the same.
+10. **What the canvas sends to the agent follows the agent pane's pick** (`src/core/terminal-sends.ts`). While the pane
+    shows a terminal session, a question or a thread's _Send to agent_, _Submit Review › Send to Agent_ and a failed
+    check's _Send to Agent_ are pushed to it instead of starting a turn (ADR 0021), and the pane lists them with the
+    rest. Only to a session on the same workspace, since its tools answer there; one on another is refused with where
+    it works. A question goes with its whole thread, which the session has never seen, and the thread id to answer with
+    `reply_to_thread`; from then on the thread is the session's (ADR 0048 point 7), so later replies wait for it in
+    `read_review`. A question that isn't delivered becomes a note again, as one the agent never saw does.
 
 ## Alternatives considered
 

@@ -6,8 +6,8 @@ import { emit } from "./events.ts";
 // (set_session_name, as ListAgents shows it); each finding or explanation it adds afterwards remembers that name in
 // settings (a column would be a migration). A reply on such a thread stays a note instead of going to the agent pane,
 // so it waits in read_review until the user tells the session to take the comments, all at once.
-// ponytail: nothing tells the session comments are waiting; the user does. A "Send to <session>" action could pass one
-// message for all of them.
+// With the session picked in the agent pane, a reply sent to the agent is pushed to it (ADR 0049, terminal-sends.ts).
+// ponytail: otherwise nothing tells the session comments are waiting; the user does.
 
 const key = (threadId: number) => `terminal.replies.${threadId}`;
 

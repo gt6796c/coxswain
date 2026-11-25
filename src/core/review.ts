@@ -444,17 +444,22 @@ export async function sendCheck(
   check: Check,
   handlers: (agentSessionId: string) => Parameters<typeof runTurn>[3],
 ): Promise<TurnResult> {
+  const prompt = await checkPrompt(db, workspaceId, check);
+  const agentSessionId = await currentSession(db, workspaceId);
+  return runTurn(db, agentSessionId, formatCheck(check.name, prompt), handlers(agentSessionId));
+}
+
+// What sendCheck says of a failed check, also pushed to a terminal session (ADR 0049).
+export async function checkPrompt(db: Db, workspaceId: number, check: Check): Promise<string> {
   const w = await prOf(db, workspaceId);
   const log = check.jobId !== null ? await readJobLog(w.owner, w.name, check.jobId) : null;
   const ending =
     log?.status === "ok"
       ? `The end of its log:\n${fence(log.log)}`
       : `Its log couldn't be read here${check.url ? `; it's at ${check.url}` : ""}.`;
-  const prompt = `The check "${check.name}" fails on this PR's head on GitHub${check.detail ? `: ${check.detail}` : "."}
+  return `The check "${check.name}" fails on this PR's head on GitHub${check.detail ? `: ${check.detail}` : "."}
 
 ${ending}
 
 Find out why it fails and whether the cause is in this branch's changes. Explain the cause and prepare implementation instructions.`;
-  const agentSessionId = await currentSession(db, workspaceId);
-  return runTurn(db, agentSessionId, formatCheck(check.name, prompt), handlers(agentSessionId));
 }

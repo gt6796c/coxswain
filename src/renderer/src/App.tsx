@@ -9,7 +9,7 @@ import { scrollToThread } from "./components/scroll-to-thread";
 import { useUiPreferences } from "./ui-preferences";
 import { setAgentPane } from "./agent-pane";
 import type { TerminalSession } from "../../core/terminal-sessions";
-import { terminalPick } from "./terminal-sessions";
+import { sendToPicked, terminalPick } from "./terminal-sessions";
 import { fileCountLabel } from "./remaining-files";
 import { createGuideReadingPosition } from "./guide-reading-position";
 import { createDescriptionPeek } from "./description-peek";
@@ -574,6 +574,23 @@ export function App() {
   }, []);
   // A new question, or a thread sent to the agent (its latest note becomes the question).
   const ask = useCallback(async (q: NewEntry | { workspaceId: number; threadId: number }) => {
+    // ADR 0049: to the terminal session the agent pane shows, if it shows one; the pane lists it, the thread shows
+    // only a failure, and the session answers with reply_to_thread.
+    const toTerminal =
+      "threadId" in q
+        ? sendToPicked(q.workspaceId, `Thread ${q.threadId}`, { kind: "thread", ...q })
+        : sendToPicked(q.workspaceId, q.body, { kind: "question", question: q });
+    if (toTerminal) {
+      setAgentsOpen(true);
+      const error = await toTerminal;
+      const id = "threadId" in q ? q.threadId : q.parentId;
+      if (id)
+        setTurns((t) => ({
+          ...t,
+          [id]: { running: false, queued: false, error, live: t[id]?.live ?? [], permission: null },
+        }));
+      return;
+    }
     const question =
       "threadId" in q
         ? await window.coxswain.sendThread(q.workspaceId, q.threadId)
@@ -1185,6 +1202,23 @@ export function App() {
     setSendingReview(true);
     setReviewNotice("Sending review to agent…");
     setAgentsOpen(true);
+    const n = threadIds.length;
+    const toTerminal = sendToPicked(
+      currentWorkspace.id,
+      `Review · ${n} thread${n === 1 ? "" : "s"}`,
+      {
+        kind: "review",
+        workspaceId: currentWorkspace.id,
+        threadIds,
+      },
+    );
+    if (toTerminal) {
+      const error = await toTerminal;
+      setReviewNotice(error);
+      if (error) showThreads();
+      setSendingReview(false);
+      return;
+    }
     try {
       const result = await window.coxswain.sendReview(currentWorkspace.id, threadIds);
       setReviewNotice(result.status === "error" ? result.message : null);

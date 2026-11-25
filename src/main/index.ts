@@ -81,6 +81,7 @@ import {
 } from "../core/appearance";
 import { openDatabase } from "../core/db";
 import { listTerminalSessions, pushToSession } from "../core/terminal-sessions";
+import { type CanvasSend, sendToTerminal } from "../core/terminal-sends";
 import {
   prepareAttachments,
   attachmentImage,
@@ -146,6 +147,7 @@ import {
   listEntries,
   type NewEntry,
   reviewPromptText,
+  checkPrompt,
   sendCheck,
   sendReview,
   stopQuestion,
@@ -644,6 +646,21 @@ app.whenReady().then(async () => {
   ipcMain.handle("terminal:sessions", () => listTerminalSessions(db));
   ipcMain.handle("terminal:push", (_, to: string, text: string, meta?: Record<string, string>) =>
     pushToSession(to, text, meta),
+  );
+  // What the canvas sends to the agent while the agent pane shows a terminal session goes to it as a push.
+  ipcMain.handle("terminal:send", async (_, to: string, what: CanvasSend) =>
+    sendToTerminal(
+      db,
+      to,
+      what.kind === "check"
+        ? {
+            kind: "check",
+            workspaceId: what.workspaceId,
+            name: what.check.name,
+            prompt: await checkPrompt(db, what.workspaceId, what.check),
+          }
+        : what,
+    ),
   );
   ipcMain.handle("agents:seen", (_, workspaceId: number) => seeAgentSessions(db, workspaceId));
   // Coalesce token bursts; all windows can reattach to the same core-owned session state.

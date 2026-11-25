@@ -344,23 +344,29 @@ export function terminalTools(db: Db, workspaceId: number, label = ""): McpTool[
 
 // Open anchored threads whose last entry isn't the agent's, each with its id, as read_review gives them. With all, the
 // agent's own too (its findings nobody answered), so a new review can be checked against the one already there.
+export const legend = `"Me" is the user, "You" an agent of this workspace (you, or coxswain's own), "@name" a reviewer on GitHub.`;
+
+// One thread as read_review lists it (and a push of it, ADR 0049): its id, where it points and the code there, then
+// who said what. A thread on no lines (a question about the review as a whole) says so.
+export function threadText([root, ...replies]: ReviewEntry[]): string {
+  const on = anchored(root) ? describe(root) : "the review as a whole";
+  const changed =
+    root.state !== "outdated"
+      ? ""
+      : root.now
+        ? `\nThese lines have changed since; they now read:\n${fence(root.now)}\nCheck the comment still applies.`
+        : "\nThese lines have changed since. Check the comment still applies.";
+  const lines = [root, ...replies].map((e) => `${who(e)}: ${e.body}`);
+  return `Thread ${root.id}, on ${on}${changed}\n${lines.join("\n")}`;
+}
+
 export function reviewText(entries: ReviewEntry[], all = false): string {
   const threads = entries
     .filter((e) => anchored(e) && !e.parentId && !e.resolvedAt)
     .map((root) => [root, ...entries.filter((e) => e.parentId === root.id)])
     .filter((t) => all || !byAgent(t[t.length - 1]));
   if (!threads.length) return all ? "No open thread." : "No open thread waits on you.";
-  const parts = threads.map(([root, ...replies]) => {
-    const changed =
-      root.state !== "outdated"
-        ? ""
-        : root.now
-          ? `\nThese lines have changed since; they now read:\n${fence(root.now)}\nCheck the comment still applies.`
-          : "\nThese lines have changed since. Check the comment still applies.";
-    const lines = [root, ...replies].map((e) => `${who(e)}: ${e.body}`);
-    return `Thread ${root.id}, on ${describe(root)}${changed}\n${lines.join("\n")}`;
-  });
-  const legend = `"Me" is the user, "You" an agent of this workspace (you, or coxswain's own), "@name" a reviewer on GitHub.`;
+  const parts = threads.map(threadText);
   return all
     ? `${threads.length} open thread(s), oldest first, those where "You" spoke last included. ${legend} Resolve with resolve_thread a finding of yours that no longer holds, replying first with why.\n\n${parts.join("\n\n")}`
     : `${threads.length} open thread(s) wait on you, oldest first. ${legend} Answer each with reply_to_thread, and resolve_thread the settled ones.\n\n${parts.join("\n\n")}`;

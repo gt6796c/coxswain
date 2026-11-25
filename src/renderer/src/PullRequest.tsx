@@ -15,6 +15,7 @@ import { cn, divider, muted } from "./components/styles";
 import { ErrorText, ProblemMessage, Prose } from "./components/text";
 import { ago } from "./format";
 import { MarkdownImageContext } from "./components/MarkdownImage";
+import { sendToPicked } from "./terminal-sessions";
 
 // The colour of a check's state, as a dot: on the PR panel, the canvas bar's PR chip and the Commits pane.
 export const checkColour: Record<CheckState, string> = {
@@ -215,6 +216,17 @@ function Checks({
   const checks = pr.checks.toSorted((a, b) => order.indexOf(a.state) - order.indexOf(b.state));
   const send = async (c: Check) => {
     setSent((s) => ({ ...s, [c.name]: null }));
+    // ADR 0049: to the terminal session the agent pane shows, if it shows one.
+    const toTerminal = sendToPicked(workspaceId, `Check · ${c.name} failed`, {
+      kind: "check",
+      workspaceId,
+      check: c,
+    });
+    if (toTerminal) {
+      const error = await toTerminal;
+      if (error) setSent((s) => ({ ...s, [c.name]: error }));
+      return;
+    }
     const r = await window.coxswain.sendCheck(workspaceId, c);
     if (r.status === "error") setSent((s) => ({ ...s, [c.name]: r.message }));
   };

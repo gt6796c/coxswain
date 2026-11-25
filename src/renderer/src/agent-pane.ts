@@ -52,3 +52,27 @@ export function setAgentPane(id: number, patch: Partial<Pane> | ((before: Pane) 
 }
 export const useAgentPane = (id: number) =>
   useSyncExternalStore(subscribe, () => panes.get(id) ?? empty);
+export const agentPane = (id: number) => panes.get(id) ?? empty;
+
+// Shows a push in the pane while it goes, then how it went (ADR 0049). The error, or null once delivered.
+export async function trackPush(
+  workspaceId: number,
+  terminalId: string,
+  text: string,
+  push: () => Promise<unknown>,
+): Promise<string | null> {
+  const record = (change: (before: Push[]) => Push[]) =>
+    setAgentPane(workspaceId, (before) => ({
+      pushes: { ...before.pushes, [terminalId]: change(before.pushes[terminalId] ?? []) },
+    }));
+  const sent: Push = { text, state: "sending" };
+  record((before) => [...before, sent]);
+  const state: Push["state"] = await push().then(
+    () => "delivered" as const,
+    (e: Error) => ({
+      error: e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ""),
+    }),
+  );
+  record((before) => before.map((p) => (p === sent ? { ...p, state } : p)));
+  return state === "delivered" ? null : state.error;
+}

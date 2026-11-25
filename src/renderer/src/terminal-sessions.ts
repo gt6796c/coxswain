@@ -1,6 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { match } from "ts-pattern";
+import type { CanvasSend } from "../../core/terminal-sends";
 import type { TerminalSession } from "../../core/terminal-sessions";
+import { agentPane, trackPush } from "./agent-pane";
 import { core } from "./queries";
 
 // ADR 0049: the terminal sessions connected to coxswain now, as L1's tabs, L4's picker and ⌘K show them.
@@ -32,6 +34,21 @@ export function terminalsByWorkspace(sessions: TerminalSession[]) {
   for (const s of sessions)
     if (s.workspace) by.set(s.workspace.id, [...(by.get(s.workspace.id) ?? []), terminalName(s)]);
   return by;
+}
+
+// What the canvas sends to the agent goes to the terminal session the agent pane shows, when it shows one, and is
+// listed there. null when it doesn't, so the caller starts a turn as before; else the error, or null once delivered.
+// label: how the pane lists it.
+export function sendToPicked(
+  workspaceId: number,
+  label: string,
+  what: CanvasSend,
+): Promise<string | null> | null {
+  const terminal = pickedTerminal(agentPane(workspaceId).picked);
+  if (!terminal) return null;
+  return trackPush(workspaceId, terminal, label, () =>
+    window.coxswain.sendToTerminal(terminal, what),
+  );
 }
 
 // The Claude account it runs under, by its config folder's name (~/.claude, ~/.claude-work).

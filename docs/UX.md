@@ -411,8 +411,11 @@ _Check again_; nothing else shows until all are there. Then, with no project yet
   (ADR 0049), by name, under a _Terminal_ heading. Picking one makes it the pane's session, so the composer and
   comments sent from the canvas go to it as pushes; the header shows `>_`, its name and _Terminal_, muted, where an
   agent session shows its agent. coxswain doesn't see that session's conversation, so the pane shows only what was pushed to it, each with
-  _Delivered_ or why not, and the composer reads _Send to <name>…_. Answers come back as threads on the canvas, which
-  the session writes with coxswain's tools. When it disconnects, the pane says so and the composer is disabled until it
+  _Delivered_ or why not, and the composer reads _Send to <name>…_. From the canvas that is a question or a thread's
+  _Send to agent_ (listed as its text or _Thread N_), _Submit Review › Send to Agent_ (_Review · N threads_) and a
+  failed check's _Send to Agent_ (_Check · name failed_); the pane opens to show it go. A thread sent there is the
+  session's from then on: later replies in it wait for the session, which answers in the thread with coxswain's tools,
+  and nothing shows in the thread until it does, unless the push failed. When it disconnects, the pane says so and the composer is disabled until it
   connects again; a session that hasn't come back after 30 seconds drops from the picker, and the pane goes back to
   the workspace's current agent session.
 
