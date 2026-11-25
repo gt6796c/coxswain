@@ -1,5 +1,56 @@
 # coxswain
 
+> [!IMPORTANT]
+> **This is a fork** of [sladkoff/coxswain](https://github.com/sladkoff/coxswain), maintained on its own and not
+> affiliated with upstream. It takes upstream releases only when one has something it wants. The page after the rule
+> below [Running this fork](#running-this-fork) is upstream's README; where the two differ, this part holds.
+
+## What this fork adds
+
+The direction: drive a review from the Claude Code sessions you already run in your own terminals, several at once,
+on as many monitors as you like, with coxswain as the shared view.
+
+- **Terminal sessions use coxswain.** A Claude Code session in your terminal gets coxswain's view tools through a
+  small MCP bridge ([ADR 0048](docs/adr/0048-tools-for-a-terminal-session.md)): it writes a Guide and pins findings to
+  lines, reads your replies and answers them, resolves threads, and scrolls coxswain to a thread. Replies on a
+  session's findings wait for that session instead of going to coxswain's own agent.
+- **Go code navigation**: Go to Definition and Find Usages through gopls, on both sides of the diff.
+- **Guides that stay put**: a Guide a session writes on request is kept until you choose Update Guide, and its fixed
+  findings still resolve as the code moves on. A Guide can cover all changes, or only pushed, unpushed, uncommitted
+  or pinned ones.
+- **Guide links**: `[G1-C1](#G1-C1)` in a Guide jumps to that finding, `[x](#heading)` to a section.
+- **Section descriptions on demand**: a section's description in a panel on ⌘I.
+- **Open from outside**: `COXSWAIN_OPEN` at launch, or a line on the control socket (`<userData>/control.sock`) while
+  running, opens a PR or branch ([ADR 0047](docs/adr/0047-opening-a-target-from-outside.md)).
+- **Your own worktrees**: with `COXSWAIN_ADOPT_WORKTREES=1`, a branch you already have checked out is reviewed where it
+  is ([ADR 0046](docs/adr/0046-adopting-the-users-worktrees.md)).
+- Smaller things: `COXSWAIN_HOME` and `COXSWAIN_AGENT_FOLDER`, SSH host-alias remotes resolve to GitHub,
+  File › Remove Workspace…, and the agent pane follows new output.
+
+Next: a two-way connection between coxswain and terminal sessions (who's connected, coxswain sending a session
+work), then asking a session about a selection of code, an inbox for the questions sessions ask you, and working
+documents with threads on their lines.
+
+## Running this fork
+
+The install script and Releases in [Getting started](#getting-started) are upstream's and install upstream's app. Run
+this fork from source:
+
+```sh
+git clone https://github.com/gt6796c/coxswain
+cd coxswain
+pnpm install
+pnpm dev
+```
+
+To give a Claude Code session in your terminal coxswain's tools:
+
+```sh
+claude mcp add -s user coxswain -- node /path/to/coxswain/scripts/coxswain-mcp.mjs
+```
+
+---
+
 > **cox·swain** /ˈkɒks(ə)n/ _noun_
 > The one in the boat who doesn't row. They steer, call the stroke and keep the crew in time.
 >
