@@ -143,23 +143,20 @@ export async function listViews(db: Db, workspaceId: number): Promise<View[]> {
   return rows.map((r) => ({ ...fromRow(r), ...meta }) as View);
 }
 
-// The Guide's scope, and whether it was requested, sit beside its instructions in settings: the workspace has one
-// Guide, and a column would be a migration. A Guide from before either covers all of the changes, written by coxswain.
-const scopeKey = (workspaceId: number) => `guides.scope.${workspaceId}`;
-const requestedKey = (workspaceId: number) => `guides.requested.${workspaceId}`;
+// The Guide's scope, and whether it was requested, by workspace (the fork's guide_scopes table, ADR 0050): the workspace has
+// one Guide. A Guide from before either covers all of the changes, written by coxswain.
 async function guideMeta(
   db: Db,
   workspaceId: number,
 ): Promise<{ scope: GuideScope; requested: boolean }> {
-  const rows = await db
-    .selectFrom("settings")
-    .select(["key", "value"])
-    .where("key", "in", [scopeKey(workspaceId), requestedKey(workspaceId)])
-    .execute();
-  const scope = rows.find((r) => r.key === scopeKey(workspaceId))?.value;
+  const row = await db
+    .selectFrom("guide_scopes")
+    .select(["scope", "requested"])
+    .where("workspace_id", "=", workspaceId)
+    .executeTakeFirst();
   return {
-    scope: isGuideScope(scope) ? scope : "all",
-    requested: rows.some((r) => r.key === requestedKey(workspaceId)),
+    scope: isGuideScope(row?.scope) ? row.scope : "all",
+    requested: row?.requested === 1,
   };
 }
 
@@ -837,18 +834,12 @@ async function replaceGuide(
   const { scope, worktree } = kept;
   await rememberGuideReviewBaseline(db, workspaceId, { base, head });
   return db.transaction().execute(async (tx) => {
+    const meta = { scope, requested: requested ? 1 : 0 };
     await tx
-      .insertInto("settings")
-      .values({ key: scopeKey(workspaceId), value: scope })
-      .onConflict((oc) => oc.column("key").doUpdateSet({ value: scope }))
+      .insertInto("guide_scopes")
+      .values({ workspace_id: workspaceId, ...meta })
+      .onConflict((oc) => oc.column("workspace_id").doUpdateSet(meta))
       .execute();
-    if (requested)
-      await tx
-        .insertInto("settings")
-        .values({ key: requestedKey(workspaceId), value: "1" })
-        .onConflict((oc) => oc.column("key").doNothing())
-        .execute();
-    else await tx.deleteFrom("settings").where("key", "=", requestedKey(workspaceId)).execute();
     const current = await tx
       .selectFrom("views")
       .select("id")

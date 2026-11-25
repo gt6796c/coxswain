@@ -209,18 +209,8 @@ test("a terminal session gets its branch's tools, reads the user's comments and 
   const [unnamed, named] = await findings();
   assert.equal(await terminalSession(db, unnamed.id), "backend-b0");
   assert.equal(await terminalSession(db, named.id), "backend-b0");
-  // A new entry given a deleted thread's id isn't the session's, and a setting from before startedAt is ignored.
-  await db
-    .updateTable("entries")
-    .set({ created_at: "2000-01-01T00:00:00.000Z" })
-    .where("id", "=", unnamed.id)
-    .execute();
-  assert.equal(await terminalSession(db, unnamed.id), null);
-  await db
-    .updateTable("settings")
-    .set({ value: "backend-b0" })
-    .where("key", "=", `terminal.replies.${unnamed.id}`)
-    .execute();
+  // A deleted thread takes its session with it, so a new entry given its id isn't the session's.
+  await db.deleteFrom("entries").where("id", "=", unnamed.id).execute();
   assert.equal(await terminalSession(db, unnamed.id), null);
   assert.equal((await session.call("read_review")).text, "No open thread waits on you.");
   assert.equal(

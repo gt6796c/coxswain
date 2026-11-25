@@ -3,6 +3,19 @@
 Where the build stands and what we owe. Newest entry first. Terms are defined in
 [the glossary](context/coxswain.md); decisions are in [the ADRs](adr/).
 
+## 2026-11-25 — The fork has its own migrations
+
+- [ADR 0050](adr/0050-fork-migrations.md): `forkMigrations` in `src/core/db.ts`, by name, run after upstream's list and
+  recorded in `fork_migrations`; `user_version` stays upstream's, so merging upstream can't collide with them and an
+  upstream build still opens the database.
+- The first two move the fork's settings keys into tables: the Guide's scope and whether it was requested
+  (`guides.scope.*`, `guides.requested.*` → `guide_scopes`) and the terminal session a thread's replies wait for
+  (`terminal.replies.*` → `terminal_threads`). Both cascade from their workspace or thread, which retires the
+  `startedAt` check against reused entry ids (ADR 0048 point 7). Paid off: the settings of deleted threads no longer
+  pile up (the old `ponytail:` in `terminal-replies.ts`).
+- Tests cover moving the settings (stale and orphaned ones dropped), the cascades, a fork migration recorded by a newer
+  build, and fork table names against upstream's.
+
 ## 2026-11-25 — Terminal sessions connect to coxswain, and coxswain can push to one
 
 - [ADR 0049](adr/0049-pushing-to-a-terminal-session.md): a terminal session's bridge connects to coxswain when the

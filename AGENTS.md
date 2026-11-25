@@ -45,7 +45,9 @@ Keeping the docs current is part of every change, not a follow-up.
   UI. The UI reaches it only through `src/preload/index.ts` (`window.coxswain`), wired to the core in
   `src/main/index.ts`.
 - **Store only what nobody else has** ([ADR 0005](docs/adr/0005-local-data-storage.md)): SQLite in
-  the core, with append-only migrations in `src/core/db.ts`. No `localStorage` or IndexedDB.
+  the core, with append-only migrations in `src/core/db.ts`. No `localStorage` or IndexedDB. This fork's own schema
+  changes go in `forkMigrations`, by name, never in upstream's numbered list
+  ([ADR 0050](docs/adr/0050-fork-migrations.md)).
 - **GitHub token comes from `gh`** and is never stored
   ([ADR 0006](docs/adr/0006-github-integration.md)).
 - **What the canvas shows is the router's location** ([ADR 0025](docs/adr/0025-canvas-history-with-tanstack-router.md)):
@@ -95,8 +97,9 @@ pnpm format      # oxfmt, formats in place
 
 GitHub features need the GitHub CLI signed in: `gh auth login`.
 
-A dev run uses the installed app's database (`~/Library/Application Support/coxswain`), and a new migration
-locks the installed release out of it. Check migrations against a scratch one: `COXSWAIN_USER_DATA=/tmp/cx pnpm dev`.
+A dev run uses the installed app's database (`~/Library/Application Support/coxswain`), and a new upstream migration
+locks the installed release out of it (a fork migration doesn't: it leaves `user_version` alone). Check migrations
+against a scratch one: `COXSWAIN_USER_DATA=/tmp/cx pnpm dev`.
 
 Before calling a change done, run `pnpm typecheck`, `pnpm test`, `pnpm lint`, `pnpm format` and `pnpm build`, and check the change in the
 running app.

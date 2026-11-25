@@ -274,6 +274,48 @@ export const migrations = [
   `alter table entries add column resolution_summary text`,
 ];
 
+// ADR 0050: the fork's own migrations, by name, applied after upstream's above and kept in fork_migrations, so merging
+// upstream's new ones never collides with them and user_version stays upstream's. Append; never edit or rename one that
+// has shipped.
+export const forkMigrations: { name: string; sql: string }[] = [
+  // ADR 0023: the workspace's Guide's scope, and whether an agent turn requested it, from settings
+  // (guides.scope.<workspace>, guides.requested.<workspace>). A workspace with no row has a Guide of all of the
+  // changes, written by coxswain.
+  {
+    name: "guide_scopes",
+    sql: `create table guide_scopes (
+      workspace_id integer primary key references workspaces (id) on delete cascade,
+      scope text not null default 'all',
+      requested integer not null default 0
+    );
+    insert into guide_scopes (workspace_id, scope)
+      select cast(substr(key, 14) as integer), value from settings
+      where key like 'guides.scope.%' and cast(substr(key, 14) as integer) in (select id from workspaces);
+    insert into guide_scopes (workspace_id, requested)
+      select cast(substr(key, 18) as integer), 1 from settings
+      where key like 'guides.requested.%' and cast(substr(key, 18) as integer) in (select id from workspaces)
+      on conflict (workspace_id) do update set requested = 1;
+    delete from settings where key like 'guides.scope.%' or key like 'guides.requested.%'`,
+  },
+  // ADR 0048: the terminal session a thread's replies wait for, by its first entry, from settings
+  // (terminal.replies.<thread>, {session, startedAt}). Only a setting whose startedAt is still its thread's: the others
+  // outlived their thread, and SQLite gave its id to a new entry.
+  {
+    name: "terminal_threads",
+    sql: `create table terminal_threads (
+      thread_id integer primary key references entries (id) on delete cascade,
+      session text not null
+    );
+    insert into terminal_threads (thread_id, session)
+      select entries.id, json_extract(settings.value, '$.session') from settings
+      join entries on entries.id = cast(substr(settings.key, 18) as integer)
+      where settings.key like 'terminal.replies.%' and json_valid(settings.value)
+        and json_type(settings.value, '$.session') = 'text'
+        and json_extract(settings.value, '$.startedAt') = entries.created_at;
+    delete from settings where key like 'terminal.replies.%'`,
+  },
+];
+
 // ADR 0016: the tables as the migrations above leave them. Change this with every migration that changes a table.
 type Side = "old" | "new";
 type Tables = {
@@ -356,6 +398,10 @@ type Tables = {
     created_at: string;
   };
   settings: { key: string; value: string };
+  // The fork's tables (ADR 0050).
+  fork_migrations: { name: string; applied_at: string };
+  guide_scopes: { workspace_id: number; scope: Generated<string>; requested: Generated<number> };
+  terminal_threads: { thread_id: number; session: string };
   prompts: { id: Generated<number>; title: string; body: string; created_at: string };
   entries: {
     id: Generated<number>;
@@ -401,6 +447,23 @@ export function openDatabase(path: string): Db {
     db.exec("begin");
     db.exec(migrations[i]);
     db.exec(`pragma user_version = ${i + 1}`);
+    db.exec("commit");
+  }
+  // ADR 0050: then the fork's, each once. One this build doesn't know (from a newer fork build) is left alone.
+  db.exec(
+    "create table if not exists fork_migrations (name text primary key, applied_at text not null)",
+  );
+  const applied = new Set(
+    (db.prepare("select name from fork_migrations").all() as { name: string }[]).map((r) => r.name),
+  );
+  for (const m of forkMigrations) {
+    if (applied.has(m.name)) continue;
+    db.exec("begin");
+    db.exec(m.sql);
+    db.prepare("insert into fork_migrations (name, applied_at) values (?, ?)").run(
+      m.name,
+      new Date().toISOString(),
+    );
     db.exec("commit");
   }
   // Off while migrating, so a table rebuilt (dropped and made again) keeps its children; checked once they're done.
