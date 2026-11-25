@@ -37,7 +37,8 @@ inbox socket is the way in for nearly every session.
 
 1. **A session is connected from when it starts.** Its bridge (ADR 0048) connects to `<userData>/control.sock` when
    Claude Code initializes it, not at its first tool call, and keeps that connection open:
-   `session {"session": <CLAUDE_CODE_SESSION_ID>, "name": …, "cwd": …, "account": …, "route": …}`. coxswain answers
+   `session {"protocol": 1, "session": <CLAUDE_CODE_SESSION_ID>, "name": …, "cwd": …, "account": …, "route": …}`
+   (`protocol`: point 9). coxswain answers
    `ready`. `account` is the Claude Code config folder it runs under (`CLAUDE_CONFIG_DIR`, else `~/.claude`), so one
    coxswain serves sessions of several Claude accounts; each account registers the bridge once
    (`claude mcp add -s user`). This connection only says the session is there; tool calls keep their own
@@ -69,12 +70,19 @@ inbox socket is the way in for nearly every session.
    the user runs. Nothing is pushed on coxswain's own initiative, so "sent by the user" stays true, and replies still
    queue (ADR 0048 point 7) until the user sends them.
 7. **Nothing waits for a session that isn't there.** A push to a session that isn't connected fails at once, naming
-   those that are; nothing is queued or stored. A bridge that loses coxswain connects again (1 s, doubling to 10 s), so
-   sessions come back by themselves when coxswain restarts. A second bridge for the same session (`/mcp` reconnect, a
-   resumed session) takes its place, and the old one is told `replaced` and stops connecting.
+   those that are; nothing is queued or stored. A bridge that loses coxswain tries again after 1 s, then every 2, 4, 8
+   and 10 s while coxswain stays away, so sessions come back by themselves when coxswain restarts, saying their name
+   again in the hello. A second bridge for the same session (`/mcp` reconnect, a resumed session) takes its place, and
+   the old one is told `replaced` and stops connecting. For a few seconds after coxswain starts, the list says sessions
+   are still connecting rather than that there are none.
 8. **The control socket stays local**: `0600`, in the user's data folder. Any process of the user's can already post to
    a session's inbox; the socket adds only coxswain's list of sessions. coxswain never looks up sessions whose bridge
    didn't connect, so it pushes only to sessions started with coxswain's bridge.
+9. **The hello says which protocol the bridge speaks**, a number raised whenever the lines on this connection change.
+   A session keeps the bridge it started with, even after coxswain is updated, so a long-running session may speak an
+   older one. coxswain lists a bridge it can't serve as "restart this session to connect" instead of turning it away
+   unseen, and answers `error: …` so the bridge stops trying. A hello with no number is from the spike, and gets the
+   same.
 
 ## Alternatives considered
 
@@ -109,3 +117,8 @@ inbox socket is the way in for nearly every session.
 - The bridge now connects for every session in every folder; one outside coxswain's repositories (ADR 0048 point 2)
   shows in the list with no workspace.
 - The spike's `COXSWAIN_PUSH` variable goes; the route comes from the command line.
+- A push in flight when coxswain quits may or may not have reached the session, and nothing records which. Pushes are
+  rare and each is the user's, who can see in the terminal.
+- A push in the seconds after coxswain starts, before the session's bridge is back, fails as not connected.
+- A bridge goes back only to the coxswain it was registered for (its `COXSWAIN_USER_DATA`): a session on the installed
+  app doesn't show in a dev run, or the other way round.
