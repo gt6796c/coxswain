@@ -1411,7 +1411,8 @@ export function App() {
     {
       id: "terminal-sessions",
       title: "Terminal Sessions…",
-      enabled: onMain,
+      // Not onMain, which leaves it out of the palette while the palette is open.
+      enabled: screen === "main" && !search.settings,
       run: () => setPalette("@"),
     },
     {
